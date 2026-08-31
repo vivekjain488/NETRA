@@ -26,6 +26,8 @@ use tracing_subscriber::EnvFilter;
 
 use crate::enrollment::EnrolledIdentity;
 use crate::status::{AgentStatus, SharedStatus};
+use netra_collect::activity::{Collector, NetworkCollector, ProcessCollector};
+
 use crate::transport::{BackendClient, HeartbeatRequest, PostureReport, TransportError};
 
 #[tokio::main]
@@ -152,6 +154,14 @@ async fn run(
     // immediately so a device reports its posture as soon as it starts.
     let mut posture_ticker = tokio::time::interval(config.posture_interval);
     posture_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    let mut collect_ticker = tokio::time::interval(config.collect_interval);
+    collect_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    let mut collectors: Vec<Box<dyn Collector + Send>> = vec![
+        Box::new(ProcessCollector::new()),
+        Box::new(NetworkCollector::new()),
+    ];
 
     let mut beats: u64 = 0;
     let mut identity_rejected = false;
@@ -311,6 +321,84 @@ async fn run(
                     }
                     Err(err) => {
                         warn!(error = %err, "posture report failed; will retry on the next cycle");
+                    }
+                }
+            }
+            _ = collect_ticker.tick() => {
+                // Collection runs whether or not the backend is reachable:
+                // offline is a normal state, and the queue is what carries the
+                // evidence across an outage (spec §37).
+                let mut collected = 0usize;
+                for collector in collectors.iter_mut() {
+                    for event in collector.collect() {
+                        queue.push(event);
+                        collected += 1;
+                    }
+                }
+
+                let stats = queue.stats();
+                status
+                    .update(|s| {
+                        s.queued_events = stats.len;
+                        s.dropped_events = stats.dropped_total;
+                    })
+                    .await;
+
+                if collected > 0 {
+                    info!(
+                        collected,
+                        queued = stats.len,
+                        utilisation = format!("{:.1}%", stats.utilisation() * 100.0),
+                        "activity collected"
+                    );
+                }
+
+                let Some(identity) = identity else { continue };
+                if identity_rejected || queue.is_empty() {
+                    continue;
+                }
+
+                // Drain a bounded batch. A failed send returns it to the front
+                // of the queue in order, so nothing is lost to a transient
+                // network failure.
+                let batch = queue.drain(config.batch_max_events);
+                match client
+                    .send_events(&identity.key, &identity.registration.device_uid, &batch)
+                    .await
+                {
+                    Ok(response) => {
+                        if !response.rejected.is_empty() {
+                            // A rejected event means a broken collector, and it
+                            // must be visible rather than silently dropped.
+                            warn!(
+                                rejected = response.rejected.len(),
+                                first_event = %response.rejected[0].event_id,
+                                first_reason = %response.rejected[0].reason,
+                                "the control plane refused some events"
+                            );
+                        }
+                        info!(
+                            accepted = response.accepted,
+                            duplicates = response.duplicates,
+                            rejected = response.rejected.len(),
+                            "events delivered"
+                        );
+                        status.update(|s| s.connected = true).await;
+                    }
+                    Err(TransportError::Unauthorized) => {
+                        error!("the control plane rejected this device while sending events");
+                        identity_rejected = true;
+                        status.update(|s| s.identity_rejected = true).await;
+                    }
+                    Err(err) => {
+                        let returned = batch.len();
+                        queue.requeue_front(batch);
+                        warn!(
+                            error = %err,
+                            requeued = returned,
+                            "event delivery failed; the batch was returned to the queue"
+                        );
+                        status.update(|s| s.connected = false).await;
                     }
                 }
             }

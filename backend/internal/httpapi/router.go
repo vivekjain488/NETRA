@@ -43,6 +43,17 @@ type Options struct {
 	PostureWeights posture.Weights
 	// ExpectedAgentVersion is the agent build the fleet should be running.
 	ExpectedAgentVersion string
+
+	// Telemetry, Risk, Policy, Incidents, Baselines and Trust together form the
+	// continuous-trust loop. Each is optional: a plane whose dependency is
+	// absent is not mounted rather than served in a half-working state.
+	Telemetry TelemetryService
+	Risk      RiskService
+	Policy    PolicyService
+	Incidents IncidentService
+	Baselines BaselineService
+	Trust     Evaluator
+	Stats     StatsService
 }
 
 // NewRouter builds the versioned NETRA API.
@@ -115,6 +126,10 @@ func NewRouter(opts Options) http.Handler {
 					}
 					agent.Post("/agent/posture", postureAPI.submit)
 				}
+
+				if opts.Telemetry != nil {
+					agent.Post("/agent/events", trustAPI(opts).ingest)
+				}
 			})
 		}
 
@@ -145,6 +160,63 @@ func NewRouter(opts Options) http.Handler {
 				soc.Use(auth.RequireRole(authDeps,
 					roleSet(identity.RoleAuditor, identity.RoleAdmin, identity.RoleAnalyst)...))
 				soc.Get("/audit", auditAPI.list)
+			})
+		}
+
+		// ── SOC plane: the continuous-trust surface ──────────────────────
+		v1.Group(func(soc chi.Router) {
+			soc.Use(authenticated)
+			soc.Use(auth.RequireRole(authDeps,
+				roleSet(identity.RoleAnalyst, identity.RoleAdmin, identity.RoleAuditor)...))
+
+			api := trustAPI(opts)
+			if opts.Telemetry != nil {
+				soc.Get("/events", api.listEvents)
+			}
+			if opts.Risk != nil {
+				soc.Get("/risk/{session_id}", api.sessionRisk)
+			}
+			if opts.Policy != nil {
+				soc.Get("/policies", api.listPolicies)
+				soc.Get("/policy-decisions", api.listDecisions)
+			}
+			if opts.Incidents != nil {
+				soc.Get("/incidents", api.listIncidents)
+				soc.Get("/incidents/{id}", api.getIncident)
+				soc.Get("/overview", api.overview)
+			}
+			if opts.Baselines != nil {
+				soc.Get("/users/{id}/baseline", api.getBaseline)
+			}
+		})
+
+		// ── Analyst actions: investigating changes state ──────────────────
+		v1.Group(func(analyst chi.Router) {
+			analyst.Use(authenticated)
+			analyst.Use(auth.RequireRole(authDeps,
+				roleSet(identity.RoleAnalyst, identity.RoleAdmin)...))
+
+			api := trustAPI(opts)
+			if opts.Incidents != nil {
+				analyst.Post("/incidents/{id}/status", api.setIncidentStatus)
+				analyst.Post("/incidents/{id}/notes", api.addIncidentNote)
+			}
+			if opts.Trust != nil {
+				analyst.Post("/sessions/{session_id}/evaluate", api.evaluate)
+			}
+			if opts.Baselines != nil {
+				analyst.Post("/users/{id}/baseline/rebuild", api.rebuildBaseline)
+			}
+		})
+
+		// ── Admin plane: changing what the system allows ──────────────────
+		if opts.Policy != nil {
+			v1.Group(func(admin chi.Router) {
+				admin.Use(authenticated)
+				admin.Use(auth.RequireRole(authDeps, roleSet(identity.RoleAdmin)...))
+				api := trustAPI(opts)
+				admin.Post("/policies", api.createPolicy)
+				admin.Post("/policies/evaluate", api.evaluatePolicy)
 			})
 		}
 
@@ -206,4 +278,18 @@ func NewRouter(opts Options) http.Handler {
 	})
 
 	return r
+}
+
+// trustAPI builds the handler for the continuous-trust routes.
+func trustAPI(opts Options) *trustHandler {
+	return &trustHandler{
+		telemetry: opts.Telemetry,
+		risk:      opts.Risk,
+		policy:    opts.Policy,
+		incidents: opts.Incidents,
+		baselines: opts.Baselines,
+		evaluator: opts.Trust,
+		stats:     opts.Stats,
+		recorder:  opts.Audit,
+	}
 }

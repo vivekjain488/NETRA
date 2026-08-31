@@ -59,6 +59,34 @@ pub struct EnrollResponse {
     pub key_protection: String,
 }
 
+/// A batch of collected events.
+///
+/// Events are sent in batches rather than individually: one signed request for
+/// fifty events costs a fraction of fifty signed requests, which is what makes
+/// the agent cheap on a bandwidth-constrained endpoint (spec §15).
+#[derive(Debug, Serialize)]
+pub struct EventBatch<'a> {
+    pub events: &'a [netra_core::Event],
+}
+
+/// What the control plane did with a batch.
+#[derive(Debug, Deserialize)]
+pub struct IngestResponse {
+    pub accepted: usize,
+    #[serde(default)]
+    pub duplicates: usize,
+    #[serde(default)]
+    pub rejected: Vec<IngestRejection>,
+}
+
+/// One event the control plane refused, and why.
+#[derive(Debug, Deserialize)]
+pub struct IngestRejection {
+    #[serde(default)]
+    pub event_id: String,
+    pub reason: String,
+}
+
 /// A posture report. The agent sends observations only: there is no score
 /// field, because the endpoint does not decide its own trustworthiness.
 #[derive(Debug, Serialize)]
@@ -189,6 +217,25 @@ impl BackendClient {
 
         response
             .json::<PostureResponse>()
+            .await
+            .map_err(|e| TransportError::Decode(e.to_string()))
+    }
+
+    /// Submits a device-signed batch of events.
+    pub async fn send_events(
+        &self,
+        key: &DeviceKey,
+        device_uid: &str,
+        events: &[netra_core::Event],
+    ) -> Result<IngestResponse, TransportError> {
+        let body = serde_json::to_vec(&EventBatch { events })
+            .map_err(|e| TransportError::Decode(e.to_string()))?;
+        let response = self
+            .signed_post(key, device_uid, "/api/v1/agent/events", body)
+            .await?;
+
+        response
+            .json::<IngestResponse>()
             .await
             .map_err(|e| TransportError::Decode(e.to_string()))
     }

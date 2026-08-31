@@ -421,7 +421,11 @@ func (h *deviceHandler) heartbeat(w http.ResponseWriter, r *http.Request) {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	return decodeJSONWithLimit(w, r, target, 1<<20)
+}
+
+func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	// Unknown fields are refused rather than ignored: silently discarding a
 	// misspelled security-relevant field is how misconfigurations hide.
 	decoder.DisallowUnknownFields()

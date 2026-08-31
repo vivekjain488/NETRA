@@ -1,27 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
-import { getReadiness, type HealthResponse } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { Async } from "@/components/soc/Async";
+import { Stat } from "@/components/soc/Stat";
+import { formatTime, severityVariant } from "@/lib/risk";
 
 /**
  * Overview.
  *
- * Every value on this page comes from a live backend response. The fleet
- * counters required by spec §29 are added in Phase 10, once devices and
- * incidents exist to count — they are not stubbed with invented numbers.
+ * Every figure is counted from stored data. Nothing on this page is estimated,
+ * and a counter with nothing to count shows zero rather than being hidden.
  */
 export function Overview() {
-  const { data, isError, isPending, error } = useQuery({
-    queryKey: ["readiness"],
-    queryFn: getReadiness,
-    refetchInterval: 10_000,
+  const { data, isPending, error } = useQuery({
+    queryKey: ["overview"],
+    queryFn: api.overview,
+    refetchInterval: 5_000,
     retry: false,
   });
 
@@ -29,123 +26,180 @@ export function Overview() {
     <>
       <PageHeader
         title="Overview"
-        description="Control plane status and build information."
+        description="Fleet state, live sessions and recent security activity."
       />
 
-      <div className="p-8">
-        {isPending && <StatusCard title="Connecting to the control plane…" />}
+      <div className="space-y-6 p-8">
+        <Async isPending={isPending} error={error} data={data}>
+          {(overview) => (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Stat label="Endpoints" value={overview.endpoints} />
+                <Stat
+                  label="Trusted"
+                  value={overview.endpoints_trusted}
+                  tone="ok"
+                  hint="device trust at or above 70"
+                />
+                <Stat
+                  label="At risk"
+                  value={overview.endpoints_at_risk}
+                  tone={overview.endpoints_at_risk > 0 ? "warn" : undefined}
+                  hint="below 70, or posture never reported"
+                />
+                <Stat
+                  label="Open incidents"
+                  value={overview.open_incidents}
+                  tone={overview.critical_incidents > 0 ? "bad" : undefined}
+                  hint={`${overview.critical_incidents} critical`}
+                />
+              </div>
 
-        {isError && (
-          <StatusCard
-            title="Backend unreachable"
-            tone="critical"
-            detail={
-              error instanceof Error
-                ? error.message
-                : "The console could not reach the NETRA backend."
-            }
-          />
-        )}
+              <div className="grid gap-4 lg:grid-cols-3">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Sessions</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-muted-foreground">Active</span>
+                      <span className="tabular text-2xl font-semibold">
+                        {overview.active_sessions}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-muted-foreground">High or critical risk</span>
+                      <span
+                        className={
+                          overview.high_risk_sessions > 0
+                            ? "tabular text-2xl font-semibold text-sev-critical"
+                            : "tabular text-2xl font-semibold"
+                        }
+                      >
+                        {overview.high_risk_sessions}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
 
-        {data && <ControlPlaneCard health={data} />}
+                <Card className="lg:col-span-2">
+                  <CardHeader>
+                    <CardTitle>Risk distribution</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <RiskDistribution distribution={overview.risk_distribution} />
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent security events</CardTitle>
+                </CardHeader>
+                <CardContent className="px-0 pb-0">
+                  {overview.recent_events.length === 0 ? (
+                    <p className="px-5 pb-5 text-sm text-muted-foreground">
+                      No events have been received yet.
+                    </p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Time</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Severity</TableHead>
+                          <TableHead>Endpoint</TableHead>
+                          <TableHead>User</TableHead>
+                          <TableHead>Detail</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {overview.recent_events.map((event) => (
+                          <TableRow key={event.id}>
+                            <TableCell className="tabular whitespace-nowrap text-muted-foreground">
+                              {formatTime(event.occurred_at)}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">{event.event_type}</TableCell>
+                            <TableCell>
+                              <Badge variant={severityVariant(event.severity)}>
+                                {event.severity}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="truncate">{event.device_hostname || "—"}</TableCell>
+                            <TableCell className="truncate">{event.user_name || "—"}</TableCell>
+                            <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
+                              {describeMetadata(event.metadata)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </Async>
       </div>
     </>
   );
 }
 
-function ControlPlaneCard({ health }: { health: HealthResponse }) {
-  const healthy = health.status === "ok";
+/** A horizontal bar of active sessions by band. */
+function RiskDistribution({ distribution }: { distribution: Record<string, number> }) {
+  const order = ["LOW", "MEDIUM", "ELEVATED", "HIGH", "CRITICAL", "UNSCORED"] as const;
+  const total = Object.values(distribution).reduce((a, b) => a + b, 0);
+
+  if (total === 0) {
+    return <p className="text-sm text-muted-foreground">No active sessions to distribute.</p>;
+  }
+
+  const colour: Record<string, string> = {
+    LOW: "bg-sev-low",
+    MEDIUM: "bg-sev-medium",
+    ELEVATED: "bg-sev-elevated",
+    HIGH: "bg-sev-high",
+    CRITICAL: "bg-sev-critical",
+    UNSCORED: "bg-muted-foreground",
+  };
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle>Control plane</CardTitle>
-            <Badge variant={healthy ? "low" : "high"}>
-              {healthy ? "ONLINE" : "DEGRADED"}
-            </Badge>
-          </div>
-          <CardDescription>Reported by the readiness endpoint.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-2 gap-y-2 text-sm">
-            <Field label="Environment" value={health.env} />
-            <Field label="Uptime" value={health.uptime} />
-            <Field label="Version" value={health.build.version} />
-            <Field label="Commit" value={health.build.commit} mono />
-          </dl>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Dependencies</CardTitle>
-          <CardDescription>Live checks from the backend.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-2 gap-y-2 text-sm">
-            {Object.entries(health.checks).map(([name, value]) => (
-              <Field key={name} label={name} value={value} />
-            ))}
-            {Object.keys(health.checks).length === 0 && (
-              <dd className="col-span-2 text-muted-foreground">
-                No dependency checks reported.
-              </dd>
-            )}
-          </dl>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Fleet</CardTitle>
-          <CardDescription>Endpoint and incident counters.</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Available once device enrollment (Phase 3) and incidents (Phase 12)
-          are implemented. No figures are shown until they are real.
-        </CardContent>
-      </Card>
+    <div className="space-y-3">
+      <div className="flex h-3 w-full overflow-hidden rounded-full">
+        {order.map((band) => {
+          const count = distribution[band] ?? 0;
+          if (count === 0) return null;
+          return (
+            <div
+              key={band}
+              className={colour[band]}
+              style={{ width: `${(count / total) * 100}%` }}
+              title={`${band}: ${count}`}
+            />
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs">
+        {order.map((band) => {
+          const count = distribution[band] ?? 0;
+          if (count === 0) return null;
+          return (
+            <span key={band} className="flex items-center gap-1.5">
+              <span className={`size-2 rounded-full ${colour[band]}`} />
+              <span className="text-muted-foreground">{band}</span>
+              <span className="tabular font-medium">{count}</span>
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function Field({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <>
-      <dt className="text-muted-foreground capitalize">{label}</dt>
-      <dd className={mono ? "truncate font-mono text-xs" : "truncate"}>{value}</dd>
-    </>
-  );
-}
-
-function StatusCard({
-  title,
-  detail,
-  tone,
-}: {
-  title: string;
-  detail?: string;
-  tone?: "critical";
-}) {
-  return (
-    <Card className="max-w-xl">
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <CardTitle>{title}</CardTitle>
-          {tone === "critical" && <Badge variant="critical">OFFLINE</Badge>}
-        </div>
-        {detail && <CardDescription>{detail}</CardDescription>}
-      </CardHeader>
-    </Card>
-  );
+function describeMetadata(metadata: Record<string, string> | undefined): string {
+  if (!metadata) return "";
+  return Object.entries(metadata)
+    .filter(([key]) => !key.startsWith("netra."))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("  ");
 }

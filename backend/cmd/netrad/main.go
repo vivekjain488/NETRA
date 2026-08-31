@@ -17,14 +17,20 @@ import (
 	"time"
 
 	"github.com/netra/backend/internal/audit"
+	"github.com/netra/backend/internal/behaviour"
 	"github.com/netra/backend/internal/config"
 	"github.com/netra/backend/internal/device"
 	"github.com/netra/backend/internal/httpapi"
 	"github.com/netra/backend/internal/identity"
+	"github.com/netra/backend/internal/incident"
 	"github.com/netra/backend/internal/logging"
+	"github.com/netra/backend/internal/policy"
 	"github.com/netra/backend/internal/posture"
+	"github.com/netra/backend/internal/risk"
 	"github.com/netra/backend/internal/session"
 	"github.com/netra/backend/internal/store"
+	"github.com/netra/backend/internal/telemetry"
+	"github.com/netra/backend/internal/trust"
 	"github.com/netra/backend/internal/user"
 	"github.com/netra/backend/internal/version"
 )
@@ -81,6 +87,31 @@ func run() error {
 	devices := device.NewStore(db.Pool())
 	sessions := session.NewStore(db.Pool(), devices)
 	postureStore := posture.NewStore(db.Pool())
+	telemetryStore := telemetry.NewStore(db.Pool())
+	riskStore := risk.NewStore(db.Pool())
+	policyStore := policy.NewStore(db.Pool())
+	baselineStore := behaviour.NewStore(db.Pool())
+	incidentStore := incident.NewStore(db.Pool())
+
+	// A control plane with no policies would allow everything, so the shipped
+	// set is seeded once to make the system safe on first boot.
+	if seeded, err := policyStore.EnsureDefaults(ctx); err != nil {
+		return fmt.Errorf("seed default policies: %w", err)
+	} else if seeded > 0 {
+		logger.Info("seeded default policies", slog.Int("count", seeded))
+	}
+
+	evaluator := trust.New(trust.Options{
+		Pool:      db.Pool(),
+		Engine:    risk.NewEngine(cfg.Risk.Weights, cfg.Risk.Thresholds()),
+		Policies:  policyStore,
+		Risks:     riskStore,
+		Baselines: baselineStore,
+		Postures:  postureStore,
+		Incidents: incidentStore,
+		Events:    telemetryStore,
+		Logger:    logger,
+	})
 
 	// Replayed-request protection only needs to remember nonces for as long as
 	// a captured request could still pass the clock-skew check.
@@ -103,6 +134,14 @@ func run() error {
 
 			PostureWeights:       cfg.Posture.Weights,
 			ExpectedAgentVersion: cfg.Posture.ExpectedAgentVersion,
+
+			Telemetry: telemetryStore,
+			Risk:      riskStore,
+			Policy:    policyStore,
+			Incidents: incidentStore,
+			Baselines: baselineStore,
+			Trust:     evaluator,
+			Stats:     trust.NewStats(db.Pool()),
 		}),
 		ReadHeaderTimeout: cfg.HTTP.ReadTimeout,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,

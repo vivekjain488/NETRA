@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/netra/backend/internal/posture"
+	"github.com/netra/backend/internal/risk"
 )
 
 // Environment names the deployment environment. Some development-only
@@ -34,7 +35,7 @@ type Config struct {
 	HTTP     HTTPConfig
 	Database DatabaseConfig
 	OIDC     OIDCConfig
-	Risk     RiskThresholds
+	Risk     RiskConfig
 	Posture  PostureConfig
 }
 
@@ -82,6 +83,19 @@ type OIDCConfig struct {
 	// switched on in production by configuration alone.
 	DevAuthEnabled bool
 	DevAuthTTL     time.Duration
+}
+
+// RiskConfig controls the risk engine.
+type RiskConfig struct {
+	RiskThresholds
+	// Weights scale each dimension. Configuration, so a deployment can weigh
+	// device trust differently from behaviour without a code change.
+	Weights risk.Weights
+}
+
+// Thresholds returns the bands in the form the risk engine expects.
+func (r RiskConfig) Thresholds() risk.Thresholds {
+	return risk.Thresholds{Low: r.Low, Medium: r.Medium, Elevated: r.Elevated, High: r.High}
 }
 
 // RiskThresholds are the upper bounds (inclusive) of each risk band.
@@ -167,6 +181,24 @@ func Load() (*Config, error) {
 			"NETRA_OIDC_ISSUER and NETRA_OIDC_AUDIENCE are required unless NETRA_DEV_AUTH_ENABLED is set"))
 	}
 
+	riskWeights := risk.DefaultWeights()
+	for _, binding := range []struct {
+		key    string
+		target *float64
+	}{
+		{"NETRA_RISK_WEIGHT_IDENTITY", &riskWeights.Identity},
+		{"NETRA_RISK_WEIGHT_DEVICE", &riskWeights.Device},
+		{"NETRA_RISK_WEIGHT_BEHAVIOUR", &riskWeights.Behaviour},
+		{"NETRA_RISK_WEIGHT_NETWORK", &riskWeights.Network},
+		{"NETRA_RISK_WEIGHT_RESOURCE", &riskWeights.Resource},
+		{"NETRA_RISK_WEIGHT_HISTORY", &riskWeights.History},
+	} {
+		value, err := floatVar(binding.key, *binding.target)
+		collect(err)
+		*binding.target = value
+	}
+	collect(riskWeights.Validate())
+
 	weights := posture.DefaultWeights()
 	for _, binding := range []struct {
 		key    string
@@ -226,7 +258,10 @@ func Load() (*Config, error) {
 			DevAuthEnabled: devAuth,
 			DevAuthTTL:     devAuthTTL,
 		},
-		Risk: RiskThresholds{Low: low, Medium: medium, Elevated: elevated, High: high},
+		Risk: RiskConfig{
+			RiskThresholds: RiskThresholds{Low: low, Medium: medium, Elevated: elevated, High: high},
+			Weights:        riskWeights,
+		},
 		Posture: PostureConfig{
 			Weights:              weights,
 			ExpectedAgentVersion: stringVar("NETRA_EXPECTED_AGENT_VERSION", ""),
@@ -285,6 +320,18 @@ func boolVar(key string, fallback bool) (bool, error) {
 	v, err := strconv.ParseBool(raw)
 	if err != nil {
 		return false, fmt.Errorf("%s must be a boolean: %w", key, err)
+	}
+	return v, nil
+}
+
+func floatVar(key string, fallback float64) (float64, error) {
+	raw, ok := os.LookupEnv(key)
+	if !ok || raw == "" {
+		return fallback, nil
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a number: %w", key, err)
 	}
 	return v, nil
 }

@@ -4,9 +4,9 @@ import {
   FileClock,
   LayoutDashboard,
   Laptop,
+  Radio,
   ScrollText,
   ShieldAlert,
-  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BackendStatus } from "@/components/layout/BackendStatus";
@@ -15,8 +15,8 @@ import { BackendStatus } from "@/components/layout/BackendStatus";
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/endpoints", label: "Endpoints", icon: Laptop },
-  { to: "/users", label: "Users", icon: Users },
   { to: "/sessions", label: "Sessions", icon: Activity },
+  { to: "/events", label: "Events", icon: Radio },
   { to: "/incidents", label: "Incidents", icon: ShieldAlert },
   { to: "/policies", label: "Policies", icon: ScrollText },
   { to: "/audit", label: "Audit", icon: FileClock },

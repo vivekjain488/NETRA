@@ -291,14 +291,95 @@ was turned off rather than only that it is off now. `?limit=` 1–200.
 
 `GET /api/v1/devices` now carries `trust_score` per device.
 
+### `POST /api/v1/agent/events` — device-signed
+
+Submits a batch of collected events. Times are Unix milliseconds: the agent has
+a clock but no date library, and an integer cannot be malformed by a locale.
+
+```json
+{ "events": [
+  { "event_id": "1988...-3", "occurred_at_ms": 1788000000000,
+    "event_type": "APPLICATION_START", "severity": "INFO",
+    "metadata": { "process": "operations-portal" } }
+] }
+```
+
+A batch is not all-or-nothing: valid events are stored and rejected ones are
+returned with reasons, so one malformed event never discards the telemetry
+alongside it. Re-sending a batch after a network failure inserts nothing —
+deduplication is a unique constraint on `(device_id, agent_event_id)`, not
+application logic that a new code path could forget.
+
+```json
+{ "batch_id": "...", "accepted": 5, "duplicates": 0, "rejected": [] }
+```
+
+Accepting events triggers a re-evaluation of the device's session: trust is
+continuous, and new telemetry is exactly the kind of change that should move a
+score.
+
+### `GET /api/v1/events` — `SECURITY_ANALYST`, `ADMIN`, `AUDITOR`
+
+The event stream. Filters: `session_id`, `device_id`, `type` (comma-separated),
+`severity`, `limit`.
+
+### `GET /api/v1/risk/{session_id}` — same roles
+
+The session's current assessment with every factor, plus the trajectory that
+got it there. Contributions always sum exactly to the score.
+
+```json
+{
+  "current": {
+    "score": 18, "level": "LOW", "recommended_action": "ALLOW",
+    "factors": [
+      { "code": "RECENTLY_ENROLLED", "dimension": "DEVICE", "contribution": 6,
+        "detail": "enrolled within the last 24 hours" }
+    ],
+    "model_version": "risk-v1", "trigger_event": "telemetry_batch"
+  },
+  "history": [ { "computed_at": "...", "score": 18, "level": "LOW", "trigger": "manual" } ]
+}
+```
+
+### `POST /api/v1/sessions/{session_id}/evaluate` — `SECURITY_ANALYST`, `ADMIN`
+
+Re-scores a session on demand and applies the resulting policy decision.
+
+### `GET /api/v1/policies` · `POST /api/v1/policies` (`ADMIN`) · `POST /api/v1/policies/evaluate` (`ADMIN`)
+
+Policies are immutable versioned rows. Creating one derives the next version in
+the same statement, so a decision that cited version 3 always finds version 3.
+`evaluate` runs a hypothetical assessment through the live set, so an
+administrator can see what a policy will do before relying on it.
+
+### `GET /api/v1/policy-decisions` — SOC roles
+
+Recent decisions with the policy version that produced each and the evaluation
+latency in microseconds.
+
+### `GET /api/v1/incidents` · `/incidents/{id}` — SOC roles
+
+An incident returns its events, risk trajectory and decisions together, so a
+timeline can be assembled without cross-referencing three lists by timestamp.
+`POST /incidents/{id}/status` and `/notes` require `SECURITY_ANALYST` or `ADMIN`.
+
+### `GET /api/v1/overview` — SOC roles
+
+Fleet counters, risk distribution and recent events, counted in one query.
+
+### `GET /api/v1/users/{id}/baseline` · `POST /api/v1/users/{id}/baseline/rebuild`
+
+The user's behavioural profile: login-hour histogram, known devices,
+applications and networks, and the access-rate statistics behind the z-score.
+
 ## Planned
 
 ### Agent plane
 
 | Method | Path | Phase |
 |---|---|---|
-| POST | `/api/v1/agent/events` | 6 |
-| GET | `/api/v1/agent/policy` | 9 |
+| GET | `/api/v1/agent/policy` | 16 (agent-side cached policy) |
 
 ### Client plane — OIDC bearer plus device binding
 

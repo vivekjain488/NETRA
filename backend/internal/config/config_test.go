@@ -30,8 +30,11 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("HTTP.ReadTimeout = %s, want 15s", cfg.HTTP.ReadTimeout)
 	}
 	want := RiskThresholds{Low: 30, Medium: 50, Elevated: 70, High: 85}
-	if cfg.Risk != want {
-		t.Errorf("Risk = %+v, want %+v", cfg.Risk, want)
+	if cfg.Risk.RiskThresholds != want {
+		t.Errorf("Risk thresholds = %+v, want %+v", cfg.Risk.RiskThresholds, want)
+	}
+	if err := cfg.Risk.Weights.Validate(); err != nil {
+		t.Errorf("default risk weights are invalid: %v", err)
 	}
 }
 

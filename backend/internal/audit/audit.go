@@ -47,6 +47,8 @@ const (
 	ActionSessionBegin      = "session.begin"
 	ActionSessionEnd        = "session.end"
 	ActionPostureRejected   = "device.posture_rejected"
+	ActionPolicyCreated     = "policy.created"
+	ActionIncidentUpdated   = "incident.status_changed"
 )
 
 // Entry is an action to be recorded.

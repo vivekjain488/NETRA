@@ -96,7 +96,7 @@ console stops it on its very next heartbeat.
 
 ## Status
 
-Phases 1 to 5 of 16 are complete. This table is the honest state of the build; nothing
+Phases 1 to 10 of 16 are complete. This table is the honest state of the build; nothing
 below is claimed working unless it has been run.
 
 | Phase | Scope | Status |
@@ -106,13 +106,13 @@ below is claimed working unless it has been run.
 | 3 | Device enrollment and Ed25519 device identity | **Done** |
 | 4 | Client ↔ agent IPC and session attestation | **Done** |
 | 5 | Device posture and trust score | **Done** |
-| 6 | Telemetry pipeline and local filtering | Not started |
-| 7 | Risk engine | Not started |
-| 8 | Behavioural baseline and analytics | Not started |
-| 9 | Policy engine | Not started |
-| 10 | SOC dashboard (full) | Skeleton only |
+| 6 | Telemetry pipeline and local filtering | **Done** |
+| 7 | Risk engine | **Done** |
+| 8 | Behavioural baseline | **Done** (Python/ML layer deferred) |
+| 9 | Policy engine | **Done** |
+| 10 | SOC dashboard | **Done** |
 | 11 | Demo applications | Not started |
-| 12 | Attack simulator and incident correlation | Not started |
+| 12 | Attack simulator | Not started (correlation done) |
 | 13 | Hero demonstration | Not started |
 | 14 | Performance benchmarks | Not started |
 | 15 | Security hardening | Partially, ongoing |

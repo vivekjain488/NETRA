@@ -13,6 +13,7 @@
 //!   executed on Windows hardware**. It is marked as such at each definition
 //!   and must not be described as working until it has been run there.
 
+pub mod activity;
 pub mod host;
 pub mod platform;
 pub mod posture;

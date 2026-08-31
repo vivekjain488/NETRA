@@ -26,6 +26,10 @@ pub struct AgentConfig {
     /// and running them every thirty seconds would be exactly the kind of
     /// continuous endpoint load spec §45 rules out.
     pub posture_interval: Duration,
+    /// Interval between activity collection cycles.
+    pub collect_interval: Duration,
+    /// Maximum events sent in one batch.
+    pub batch_max_events: usize,
     /// Maximum events retained locally while the backend is unreachable.
     pub queue_max_events: usize,
     /// Maximum bytes retained locally while the backend is unreachable.
@@ -40,6 +44,8 @@ impl Default for AgentConfig {
             backend_url: "http://localhost:8080".to_string(),
             heartbeat_interval: Duration::from_secs(30),
             posture_interval: Duration::from_secs(600),
+            collect_interval: Duration::from_secs(60),
+            batch_max_events: 100,
             // Bounded by both count and bytes (spec §15): local storage must
             // never grow without limit on a government endpoint.
             queue_max_events: 10_000,
@@ -76,6 +82,20 @@ impl AgentConfig {
             cfg.posture_interval = parse_duration(&raw).ok_or(ConfigError::Invalid {
                 key: "NETRA_AGENT_POSTURE_INTERVAL",
                 reason: format!("expected a duration such as 10m, got {raw:?}"),
+            })?;
+        }
+
+        if let Some(raw) = non_empty("NETRA_AGENT_COLLECT_INTERVAL") {
+            cfg.collect_interval = parse_duration(&raw).ok_or(ConfigError::Invalid {
+                key: "NETRA_AGENT_COLLECT_INTERVAL",
+                reason: format!("expected a duration such as 60s, got {raw:?}"),
+            })?;
+        }
+
+        if let Some(raw) = non_empty("NETRA_AGENT_BATCH_MAX_EVENTS") {
+            cfg.batch_max_events = parse_positive(&raw).ok_or(ConfigError::Invalid {
+                key: "NETRA_AGENT_BATCH_MAX_EVENTS",
+                reason: format!("expected a positive integer, got {raw:?}"),
             })?;
         }
 
@@ -140,6 +160,8 @@ mod tests {
             cfg.posture_interval > cfg.heartbeat_interval,
             "posture probes spawn processes and must run far less often than heartbeats"
         );
+        assert!(cfg.batch_max_events > 0, "batches must carry at least one event");
+        assert!(cfg.collect_interval > Duration::ZERO);
     }
 
     #[test]
