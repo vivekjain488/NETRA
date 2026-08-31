@@ -22,6 +22,7 @@ import (
 	"github.com/netra/backend/internal/httpapi"
 	"github.com/netra/backend/internal/identity"
 	"github.com/netra/backend/internal/logging"
+	"github.com/netra/backend/internal/session"
 	"github.com/netra/backend/internal/store"
 	"github.com/netra/backend/internal/user"
 	"github.com/netra/backend/internal/version"
@@ -77,10 +78,11 @@ func run() error {
 	users := user.NewStore(db.Pool())
 	auditStore := audit.NewStore(db.Pool(), logger)
 	devices := device.NewStore(db.Pool())
+	sessions := session.NewStore(db.Pool(), devices)
 
 	// Replayed-request protection only needs to remember nonces for as long as
 	// a captured request could still pass the clock-skew check.
-	startNoncePruner(ctx, devices, logger)
+	startNoncePruner(ctx, devices, sessions, logger)
 
 	srv := &http.Server{
 		Addr: cfg.HTTP.Addr,
@@ -94,6 +96,7 @@ func run() error {
 			AuditReader: auditStore,
 			DevVerifier: devVerifier,
 			Devices:     devices,
+			Sessions:    sessions,
 		}),
 		ReadHeaderTimeout: cfg.HTTP.ReadTimeout,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,
@@ -197,7 +200,7 @@ func buildVerifier(cfg *config.Config, logger *slog.Logger) (identity.Verifier, 
 
 // startNoncePruner periodically deletes replay nonces that can no longer be
 // used, so the table does not grow without bound on a busy fleet.
-func startNoncePruner(ctx context.Context, devices *device.Store, logger *slog.Logger) {
+func startNoncePruner(ctx context.Context, devices *device.Store, sessions *session.Store, logger *slog.Logger) {
 	const interval = 10 * time.Minute
 
 	go func() {
@@ -212,13 +215,17 @@ func startNoncePruner(ctx context.Context, devices *device.Store, logger *slog.L
 				// Twice the skew window, so a nonce is never forgotten while a
 				// request carrying it could still be accepted.
 				cutoff := time.Now().Add(-2 * device.MaxClockSkew)
-				removed, err := devices.PruneNonces(ctx, cutoff)
-				if err != nil {
+				if removed, err := devices.PruneNonces(ctx, cutoff); err != nil {
 					logger.Error("failed to prune replay nonces", slog.String("error", err.Error()))
-					continue
-				}
-				if removed > 0 {
+				} else if removed > 0 {
 					logger.Debug("pruned replay nonces", slog.Int64("removed", removed))
+				}
+
+				// Attestation challenges are unusable once expired.
+				if removed, err := sessions.PruneNonces(ctx, time.Now()); err != nil {
+					logger.Error("failed to prune attestation nonces", slog.String("error", err.Error()))
+				} else if removed > 0 {
+					logger.Debug("pruned attestation nonces", slog.Int64("removed", removed))
 				}
 			}
 		}

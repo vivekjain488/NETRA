@@ -140,6 +140,41 @@ which needs a fresh enrollment token.
 To re-enrol during development, revoke the old device first — a duplicate
 `device_uid` is rejected, and a genuine reinstall generates a new one anyway.
 
+## Client to agent IPC
+
+The agent listens on a local endpoint and publishes its address to
+`agent.endpoint` in the state directory. The client reads that file rather than
+re-deriving the path, because on Unix the agent falls back to a short name in
+the temporary directory when the state directory would overflow
+`sockaddr_un.sun_path` (104 bytes on macOS).
+
+| Platform | Endpoint |
+|---|---|
+| Unix | `<state dir>/agent.sock`, mode 600, or `$TMPDIR/netra-<hash>.sock` |
+| Windows | `\\.\pipe\netra-agent-<username>` |
+
+Authentication is a per-boot token in `ipc.token`, readable only by the agent's
+account and regenerated on every start.
+
+Two methods exist:
+
+| Method | Purpose |
+|---|---|
+| `status` | The agent's report on itself: enrollment, key protection, connectivity, queue depth |
+| `attest` | Signs a sign-in challenge. Takes `nonce` and `subject` only — the agent builds the signed message itself |
+
+`attest` deliberately does not accept a message to sign. If it did, any local
+process holding the IPC token could use the agent as an oracle to forge
+agent-plane request signatures.
+
+Talking to it by hand:
+
+```bash
+STATE=~/Library/Application\ Support/NETRA   # or $NETRA_AGENT_STATE_DIR
+printf '{"token":"%s","method":"status","params":{}}\n' "$(cat "$STATE/ipc.token")" \
+  | nc -U "$(cat "$STATE/agent.endpoint")"
+```
+
 ## Testing
 
 ```bash

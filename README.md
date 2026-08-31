@@ -96,15 +96,15 @@ console stops it on its very next heartbeat.
 
 ## Status
 
-Phases 1 to 3 of 16 are complete. This table is the honest state of the build; nothing
+Phases 1 to 4 of 16 are complete. This table is the honest state of the build; nothing
 below is claimed working unless it has been run.
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Repository, Docker stack, backend/agent/client/dashboard skeletons | **Done** |
-| 2 | OIDC authentication (Keycloak), RBAC, hash-chained audit | **Done** |
+| 2 | OIDC authentication (Keycloak), RBAC, hash-chained audit | **Done** (interactive client sign-in pending) |
 | 3 | Device enrollment and Ed25519 device identity | **Done** |
-| 4 | Client ↔ agent IPC and session attestation | Not started |
+| 4 | Client ↔ agent IPC and session attestation | **Done** |
 | 5 | Device posture and trust score | Not started |
 | 6 | Telemetry pipeline and local filtering | Not started |
 | 7 | Risk engine | Not started |

@@ -195,6 +195,52 @@ secret, but publishing every device's key serves no operational purpose.
 
 Withdraws trust. Takes effect on the device's next request, and is audited.
 
+### `POST /api/v1/client/session/nonce`
+
+Issues a single-use attestation challenge for the authenticated caller. Valid
+for two minutes.
+
+```json
+{
+  "nonce": "<64 hex characters>",
+  "expires_at": "2026-08-31T09:52:00Z",
+  "message": "NETRA-attest-v1\n<nonce>\nalice"
+}
+```
+
+`message` is exactly what the device must sign. It is returned rather than left
+for the client to assemble, so a client bug cannot silently produce a signature
+over the wrong bytes.
+
+### `POST /api/v1/client/session/begin`
+
+Establishes a session bound to both the user and their device.
+
+```json
+{ "device_uid": "netra-5f07…", "nonce": "<from above>", "signature": "<base64 Ed25519>" }
+```
+
+| Status | Meaning |
+|---|---|
+| `201` | Session established, `attestation: "device-signature"` |
+| `400` | Nonce unknown, expired, spent, or issued to a different user |
+| `401` | The device signature did not verify |
+| `403` | Device unknown, not active, or its agent has not reported in 15 minutes |
+
+Every outcome is audited, including failures: a valid user token with a failed
+device proof is a strong signal.
+
+### `POST /api/v1/client/session/end`
+
+Ends the caller's own session. The user identifier is part of the update
+predicate, so one user cannot end another's session by guessing an identifier —
+the attempt is indistinguishable from a session that does not exist (`404`).
+
+### `GET /api/v1/sessions` and `GET /api/v1/sessions/{id}` — `SECURITY_ANALYST`, `ADMIN`, `AUDITOR`
+
+Sessions with their bound user, device and attestation method. `?active=true`
+restricts to sessions that have not ended.
+
 ## Planned
 
 ### Agent plane
@@ -204,14 +250,11 @@ Withdraws trust. Takes effect on the device's next request, and is audited.
 | POST | `/api/v1/agent/posture` | 5 |
 | POST | `/api/v1/agent/events` | 6 |
 | GET | `/api/v1/agent/policy` | 9 |
-| POST | `/api/v1/agent/session/attest` | 4 |
 
 ### Client plane — OIDC bearer plus device binding
 
 | Method | Path | Phase |
 |---|---|---|
-| POST | `/api/v1/client/session/begin` | 4 |
-| POST | `/api/v1/client/session/end` | 4 |
 | GET | `/api/v1/client/risk` | 7 |
 | GET | `/api/v1/client/policy` | 9 |
 | GET | `/api/v1/client/applications` | 11 |
@@ -224,7 +267,6 @@ Withdraws trust. Takes effect on the device's next request, and is audited.
 |---|---|---|
 | GET | `/api/v1/overview` | 10 |
 | GET | `/api/v1/users`, `/users/{id}` | 2 / 10 |
-| GET | `/api/v1/sessions`, `/sessions/{id}` | 4 / 10 |
 | GET | `/api/v1/incidents`, `/incidents/{id}` | 12 |
 | POST | `/api/v1/incidents/{id}/notes`, `/status` | 12 |
 | GET | `/api/v1/risk/{session_id}` | 7 |

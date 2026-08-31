@@ -9,9 +9,9 @@ planned, without conflating the two.
 | # | Boundary | Control | State |
 |---|---|---|---|
 | B1 | Renderer → Electron main | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict CSP, explicit preload allowlist | Implemented |
-| B2 | Electron → agent | Named pipe (Windows ACL) / Unix socket (0600), per-boot token, peer verification | Phase 4 |
+| B2 | Electron → agent | Named pipe (Windows) / Unix socket (0600), per-boot token, narrow method surface | Implemented |
 | B3 | Agent → backend | mTLS plus Ed25519 request signing with nonce and timestamp | Signing done; mTLS Phase 15 |
-| B4 | Client → backend | OIDC JWT validated against JWKS, **plus** device attestation | JWT done; attestation Phase 4 |
+| B4 | Client → backend | OIDC JWT validated against JWKS, **plus** device attestation | Implemented |
 | B5 | Backend → database | Least-privilege role, parameterised queries only | Implemented |
 | B6 | SOC → backend | RBAC per route, every privileged action audited | Implemented |
 | B7 | Demo apps → backend | Access decisions come from the policy API; apps hold no policy logic | Phase 11 |
@@ -128,6 +128,38 @@ signature is even verified.
 for one, the enrollment payload has no field for one, and the agent's
 `DeviceKey` has a hand-written `Debug` implementation so an accidental `{:?}`
 cannot print it. Each of these is covered by a test.
+
+**A session requires both a user and a device.** Signing in is a four-step
+exchange: obtain a user token, request an attestation nonce, have the agent
+sign it, then present all of it together. A stolen token alone produces no
+session, and a device with no user produces none either. The nonce is issued to
+one specific user, single-use, and expires in two minutes; the device must also
+have sent a heartbeat within the last fifteen minutes, so a device whose agent
+has gone quiet stops conferring trust.
+
+**The attestation message is its own scheme.** It carries a `NETRA-attest-v1`
+prefix, distinct from the `NETRA-v1` prefix on agent request signatures, so an
+intercepted heartbeat signature can never be presented as a sign-in proof. The
+subject is bound into the signed bytes, so an attestation produced during one
+person's sign-in cannot be lifted into another's on a shared device. The
+backend returns the exact message to be signed rather than letting the client
+assemble it, so a client bug cannot silently sign the wrong bytes.
+
+**The agent never signs arbitrary bytes.** Its local IPC `attest` method takes
+a nonce and a subject and constructs the message itself. There is no code path
+by which a local process holding the IPC token can obtain an agent-plane
+request signature — proven by a test that checks an attestation signature fails
+to verify as a request signature.
+
+**The IPC channel is narrow and local.** A Unix socket with owner-only
+permissions, or a named pipe — not a loopback port every local process could
+reach. A per-boot token, regenerated on every start so it cannot be harvested
+once and reused, is compared in constant time. Requests are bounded in size,
+and the method surface is two calls.
+
+**The access token never reaches the renderer.** It is held in the Electron
+main process; the renderer receives only session state. A renderer compromised
+by XSS cannot exfiltrate it.
 
 **Generated secrets, never committed ones.** `.env.example` ships every secret
 blank and `make env` generates a random 32-character value for each. A shared

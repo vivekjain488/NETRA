@@ -44,6 +44,8 @@ const (
 	ActionDeviceRevoke      = "device.revoke"
 	ActionEnrollTokenIssue  = "device.enrollment_token_issued"
 	ActionAuditRead         = "audit.read"
+	ActionSessionBegin      = "session.begin"
+	ActionSessionEnd        = "session.end"
 )
 
 // Entry is an action to be recorded.

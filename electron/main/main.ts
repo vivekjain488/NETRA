@@ -9,7 +9,9 @@
 import { app, BrowserWindow } from "electron";
 import { hostname } from "node:os";
 import path from "node:path";
+import { AgentClient } from "./agent";
 import { registerIpcHandlers } from "./ipc";
+import { SessionManager } from "./session";
 import {
   applyContentSecurityPolicy,
   contentSecurityPolicy,
@@ -58,7 +60,13 @@ if (!enforceSingleInstance()) {
   void app.whenReady().then(() => {
     applyContentSecurityPolicy(contentSecurityPolicy(BACKEND_URL, DEV_SERVER_URL));
     denyAllPermissions();
-    registerIpcHandlers({ backendUrl: BACKEND_URL, hostname: hostname() });
+    const agent = new AgentClient();
+    registerIpcHandlers({
+      backendUrl: BACKEND_URL,
+      hostname: hostname(),
+      agent,
+      sessions: new SessionManager(BACKEND_URL, agent),
+    });
 
     createWindow();
 

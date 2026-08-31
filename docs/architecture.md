@@ -68,9 +68,11 @@ backend            : verify JWT
 
 A stolen token alone is not enough; a compromised device alone is not enough.
 
-*Status: the device half is implemented — key generation, enrollment, signed
-requests and revocation all work end to end. Binding a session to both user and
-device lands in Phase 4.*
+*Status: implemented and verified end to end. The one deviation is the first
+step: interactive sign-in with the organisational identity provider is not
+built yet, so the client currently obtains its user token from the backend's
+development endpoint. Everything after that — nonce, attestation, binding — is
+the real mechanism.*
 
 ## Decisions and their reasons
 
@@ -118,6 +120,8 @@ Implemented in migration `0001_init.sql`:
 `resources` · `sessions` · `events` · `audit_logs`
 
 Added by migration `0002_device_identity.sql`: `replay_nonces`.
+Added by migration `0003_session_attestation.sql`: `session_nonces`, and
+`sessions.attestation` recording how each session's device was proven.
 
 Added in later phases: `risk_scores`, `risk_factors`, `behaviour_profiles`,
 `policies`, `policy_decisions`, `incidents`, `incident_events`,

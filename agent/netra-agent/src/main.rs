@@ -9,8 +9,11 @@
 //! is added in Phase 16 alongside packaging.
 
 mod enrollment;
+mod ipc;
+mod status;
 mod transport;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -22,6 +25,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::enrollment::EnrolledIdentity;
+use crate::status::{AgentStatus, SharedStatus};
 use crate::transport::{BackendClient, HeartbeatRequest, TransportError};
 
 #[tokio::main]
@@ -71,8 +75,38 @@ async fn main() -> Result<()> {
         },
     };
 
+    let identity = identity.map(Arc::new);
+
+    let status = SharedStatus::new(AgentStatus {
+        enrolled: identity.is_some(),
+        device_id: identity.as_ref().map(|i| i.registration.device_id.clone()),
+        device_uid: identity.as_ref().map(|i| i.registration.device_uid.clone()),
+        key_protection: keys.protection().as_api_value().to_string(),
+        hostname: host.hostname.clone(),
+        os_name: host.os_name.clone(),
+        os_version: host.os_version.clone(),
+        agent_version: env!("CARGO_PKG_VERSION").to_string(),
+        backend_url: config.backend_url.clone(),
+        ..Default::default()
+    });
+
+    // The client needs the agent's status and, at sign-in, a device
+    // attestation. Everything else stays inside the agent.
+    let ipc_token = ipc::write_token_file(&state_dir)?;
+    let ipc_context = Arc::new(ipc::IpcContext {
+        token: ipc_token,
+        status: status.clone(),
+        identity: tokio::sync::Mutex::new(identity.clone()),
+    });
+    let ipc_dir = state_dir.clone();
+    tokio::spawn(async move {
+        if let Err(err) = ipc::serve(ipc_context, ipc_dir).await {
+            error!(error = %err, "local IPC server stopped");
+        }
+    });
+
     let mut queue = EventQueue::new(config.queue_max_events, config.queue_max_bytes);
-    run(&config, &client, identity.as_ref(), &mut queue).await;
+    run(&config, &client, identity.as_deref(), &status, &mut queue).await;
 
     let stats = queue.stats();
     info!(
@@ -103,6 +137,7 @@ async fn run(
     config: &AgentConfig,
     client: &BackendClient,
     identity: Option<&EnrolledIdentity>,
+    status: &SharedStatus,
     queue: &mut EventQueue,
 ) {
     let mut interval = config.heartbeat_interval;
@@ -125,6 +160,13 @@ async fn run(
                 );
 
                 let stats = queue.stats();
+                status
+                    .update(|s| {
+                        s.queued_events = stats.len;
+                        s.dropped_events = stats.dropped_total;
+                    })
+                    .await;
+
                 let Some(identity) = identity else {
                     info!(
                         beat = beats,
@@ -157,6 +199,7 @@ async fn run(
                             policy_version = response.policy_version,
                             "heartbeat acknowledged"
                         );
+                        status.update(|s| s.connected = true).await;
                         // The control plane owns the cadence, so a fleet can be
                         // slowed down centrally without redeploying agents.
                         let requested = Duration::from_secs(response.heartbeat_interval_seconds.clamp(5, 3600));
@@ -185,6 +228,12 @@ async fn run(
                              revoked. Telemetry will continue to be collected locally but not sent."
                         );
                         identity_rejected = true;
+                        status
+                            .update(|s| {
+                                s.connected = false;
+                                s.identity_rejected = true;
+                            })
+                            .await;
                     }
                     Err(err) => {
                         // Offline operation is normal (spec §37): keep
@@ -195,6 +244,7 @@ async fn run(
                             error = %err,
                             "heartbeat failed; continuing to queue locally"
                         );
+                        status.update(|s| s.connected = false).await;
                     }
                 }
             }

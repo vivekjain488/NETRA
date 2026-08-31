@@ -34,6 +34,8 @@ type Options struct {
 	DevVerifier *identity.DevVerifier
 	// Devices backs the agent and device-administration planes.
 	Devices DeviceService
+	// Sessions backs session establishment and the SOC session views.
+	Sessions SessionService
 }
 
 // NewRouter builds the versioned NETRA API.
@@ -105,6 +107,13 @@ func NewRouter(opts Options) http.Handler {
 		v1.Group(func(client chi.Router) {
 			client.Use(authenticated)
 			client.Get("/client/me", handleMe)
+
+			if opts.Sessions != nil {
+				sessionAPI := &sessionHandler{sessions: opts.Sessions, recorder: opts.Audit}
+				client.Post("/client/session/nonce", sessionAPI.issueNonce)
+				client.Post("/client/session/begin", sessionAPI.begin)
+				client.Post("/client/session/end", sessionAPI.end)
+			}
 		})
 
 		// ── SOC plane: analysts, auditors and administrators ──────────────
@@ -115,6 +124,17 @@ func NewRouter(opts Options) http.Handler {
 				soc.Use(auth.RequireRole(authDeps,
 					roleSet(identity.RoleAuditor, identity.RoleAdmin, identity.RoleAnalyst)...))
 				soc.Get("/audit", auditAPI.list)
+			})
+		}
+
+		if opts.Sessions != nil {
+			sessionAPI := &sessionHandler{sessions: opts.Sessions, recorder: opts.Audit}
+			v1.Group(func(soc chi.Router) {
+				soc.Use(authenticated)
+				soc.Use(auth.RequireRole(authDeps,
+					roleSet(identity.RoleAnalyst, identity.RoleAdmin, identity.RoleAuditor)...))
+				soc.Get("/sessions", sessionAPI.listSessions)
+				soc.Get("/sessions/{id}", sessionAPI.getSession)
 			})
 		}
 

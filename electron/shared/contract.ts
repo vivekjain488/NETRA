@@ -12,6 +12,9 @@ export const CHANNELS = {
   risk: "netra:risk",
   policy: "netra:policy",
   connection: "netra:connection",
+  session: "netra:session",
+  signIn: "netra:sign-in",
+  signOut: "netra:sign-out",
 } as const;
 
 export type Channel = (typeof CHANNELS)[keyof typeof CHANNELS];
@@ -34,6 +37,31 @@ export interface DeviceStatus {
   trustScore: Available<number>;
   agentConnected: boolean;
   agentVersion: Available<string>;
+  /** How the device private key is protected: software, tpm, certificate store. */
+  keyProtection: Available<string>;
+  /** True when the control plane has refused this device's identity. */
+  identityRevoked: boolean;
+  /** Events held locally while the backend is unreachable. */
+  queuedEvents: Available<number>;
+}
+
+/** The current session, if the user is signed in. */
+export interface SessionStatus {
+  signedIn: boolean;
+  subject?: string;
+  sessionId?: string;
+  status?: string;
+  /** How the device was proven for this session. */
+  attestation?: string;
+  startedAt?: string;
+}
+
+/** The outcome of a sign-in attempt. */
+export interface SignInResult {
+  ok: boolean;
+  session?: SessionStatus;
+  error?: string;
+  detail?: string;
 }
 
 export interface RiskStatus {
@@ -64,4 +92,13 @@ export interface NetraBridge {
   getRisk(): Promise<RiskStatus>;
   getPolicy(): Promise<PolicyStatus>;
   getConnectionStatus(): Promise<ConnectionStatus>;
+  getSession(): Promise<SessionStatus>;
+  /**
+   * Signs in and establishes an attested session.
+   *
+   * The access token never crosses this boundary: it is held in the main
+   * process, and only the resulting session state is returned.
+   */
+  signIn(subject: string): Promise<SignInResult>;
+  signOut(): Promise<SessionStatus>;
 }
