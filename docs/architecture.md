@@ -122,6 +122,9 @@ Implemented in migration `0001_init.sql`:
 Added by migration `0002_device_identity.sql`: `replay_nonces`.
 Added by migration `0003_session_attestation.sql`: `session_nonces`, and
 `sessions.attestation` recording how each session's device was proven.
+Added by migration `0004_device_posture.sql`: `device_posture.factors` and
+`model_version`, so a stored score carries both its explanation and the model
+that produced it.
 
 Added in later phases: `risk_scores`, `risk_factors`, `behaviour_profiles`,
 `policies`, `policy_decisions`, `incidents`, `incident_events`,

@@ -46,6 +46,7 @@ const (
 	ActionAuditRead         = "audit.read"
 	ActionSessionBegin      = "session.begin"
 	ActionSessionEnd        = "session.end"
+	ActionPostureRejected   = "device.posture_rejected"
 )
 
 // Entry is an action to be recorded.

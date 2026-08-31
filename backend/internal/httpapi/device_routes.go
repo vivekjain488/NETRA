@@ -31,6 +31,9 @@ type DeviceService interface {
 type deviceHandler struct {
 	devices  DeviceService
 	recorder audit.Recorder
+	// posture is optional: the fleet listing shows a trust score when posture
+	// scoring is available, and simply omits it when it is not.
+	posture PostureService
 }
 
 // ── Wire types ──────────────────────────────────────────────────────────────
@@ -77,6 +80,7 @@ type DeviceResponse struct {
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at,omitempty"`
 	RevokedAt       *time.Time `json:"revoked_at,omitempty"`
 	RevokedReason   string     `json:"revoked_reason,omitempty"`
+	TrustScore      *int       `json:"trust_score,omitempty"`
 }
 
 // HeartbeatRequest is the agent's periodic liveness report.
@@ -195,9 +199,23 @@ func (h *deviceHandler) listDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One query for every device's current score, rather than one per device.
+	var scores map[uuid.UUID]int
+	if h.posture != nil {
+		if scores, err = h.posture.LatestScores(ctx); err != nil {
+			// A missing score degrades the listing; it must not fail it.
+			logging.FromContext(ctx).Error("failed to load posture scores", "error", err.Error())
+			scores = nil
+		}
+	}
+
 	out := make([]DeviceResponse, 0, len(devices))
 	for i := range devices {
-		out = append(out, toDeviceResponse(&devices[i]))
+		response := toDeviceResponse(&devices[i])
+		if score, ok := scores[devices[i].ID]; ok {
+			response.TrustScore = &score
+		}
+		out = append(out, response)
 	}
 	WriteJSON(w, r, http.StatusOK, map[string]any{"devices": out})
 }
@@ -223,7 +241,13 @@ func (h *deviceHandler) getDevice(w http.ResponseWriter, r *http.Request) {
 			"The device could not be loaded.")
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, toDeviceResponse(found))
+	response := toDeviceResponse(found)
+	if h.posture != nil {
+		if latest, err := h.posture.Latest(ctx, found.ID); err == nil {
+			response.TrustScore = &latest.TrustScore
+		}
+	}
+	WriteJSON(w, r, http.StatusOK, response)
 }
 
 // revokeDevice withdraws trust from a device.

@@ -57,6 +57,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         keyProtection: unavailable("The NETRA agent is not running"),
         identityRevoked: false,
         queuedEvents: unavailable("The NETRA agent is not running"),
+        trustWeaknesses: [],
       };
     }
 
@@ -65,13 +66,18 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       deviceId: status.device_id
         ? { available: true, value: status.device_id }
         : unavailable("This device is not enrolled"),
-      // Posture scoring arrives in Phase 5; the client does not invent a score.
-      trustScore: pending("Phase 5 (device posture)"),
+      // The score comes from the control plane. Until the first posture report
+      // is scored there is no score, and the client does not invent one.
+      trustScore:
+        status.trust_score === null
+          ? unavailable("Awaiting the first posture assessment")
+          : { available: true, value: status.trust_score },
       agentConnected: true,
       agentVersion: { available: true, value: status.agent_version },
       keyProtection: { available: true, value: status.key_protection },
       identityRevoked: status.identity_rejected,
       queuedEvents: { available: true, value: status.queued_events },
+      trustWeaknesses: status.trust_weaknesses ?? [],
     };
   });
 

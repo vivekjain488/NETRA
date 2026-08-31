@@ -161,6 +161,33 @@ and the method surface is two calls.
 main process; the renderer receives only session state. A renderer compromised
 by XSS cannot exfiltrate it.
 
+**The endpoint reports facts; the backend decides what they are worth.** An
+agent submits observations — encryption on, firewall on, OS version — and the
+control plane scores them. An endpoint that computed its own trust score would
+be asserting its own trustworthiness, and a compromised one would simply report
+100. The posture report has no score field, and a submission containing one is
+rejected. The device a report is attributed to comes from the verified request
+signature, never the body, so one agent cannot report on another's behalf.
+
+**Unknown is not the same as satisfied.** Every posture signal is
+three-valued: satisfied, not satisfied, or not determined. A collector that
+failed to run scores zero and records why, so it can never be mistaken for one
+that found a control enabled. Endpoint claims are stored marked `reported`;
+only what the backend established itself is marked `verified`, and an
+assessment resting on any endpoint claim reports `verified: false` — which is
+the honest answer today.
+
+**A score always comes with its reasons.** Contributions sum exactly to the
+score, so the explanation an analyst reads reconciles with the number rather
+than approximating it. The weights are configuration and the model version is
+stored with every assessment, because a historical score is only interpretable
+alongside the model that produced it.
+
+**Silence is a signal.** A device whose agent has not reported within fifteen
+minutes loses its agent-health points and cannot establish a new session. NETRA
+cannot see what a silent endpoint is doing, so it stops conferring trust rather
+than quietly continuing to.
+
 **Generated secrets, never committed ones.** `.env.example` ships every secret
 blank and `make env` generates a random 32-character value for each. A shared
 default development password is the first thing an attacker tries, and the

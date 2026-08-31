@@ -8,7 +8,7 @@ enforced by engineering, not by policy text.
 | Category | Examples |
 |---|---|
 | Authentication | sign-in, sign-out, step-up verification outcomes |
-| Device posture | OS build, disk encryption state, agent health, identity validity |
+| Device posture | OS build, disk encryption, boot integrity, firewall, screen lock, malware protection, agent health |
 | Application metadata | which approved application was launched or accessed |
 | Resource access | which classified resource was accessed, and its sensitivity |
 | Privilege changes | elevation and group membership changes |
@@ -44,6 +44,12 @@ See `electron/main/security.ts`.
 **Content-Security-Policy limits where data can go.** `connect-src` in the
 client is restricted to the NETRA backend, so a compromised renderer cannot
 exfiltrate to an arbitrary origin.
+
+**Posture is configuration state, not activity.** The signals collected say
+whether a security control is switched on. They say nothing about what the
+person is doing, which files exist, or which applications are open. Where a
+control cannot be read the answer is recorded as unknown with the reason, not
+inferred from anything else on the machine.
 
 **Data stays under the operator's control.** The deployment has no dependency
 on any cloud provider or third-party telemetry service. Everything runs on

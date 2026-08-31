@@ -22,6 +22,7 @@ import (
 	"github.com/netra/backend/internal/httpapi"
 	"github.com/netra/backend/internal/identity"
 	"github.com/netra/backend/internal/logging"
+	"github.com/netra/backend/internal/posture"
 	"github.com/netra/backend/internal/session"
 	"github.com/netra/backend/internal/store"
 	"github.com/netra/backend/internal/user"
@@ -79,6 +80,7 @@ func run() error {
 	auditStore := audit.NewStore(db.Pool(), logger)
 	devices := device.NewStore(db.Pool())
 	sessions := session.NewStore(db.Pool(), devices)
+	postureStore := posture.NewStore(db.Pool())
 
 	// Replayed-request protection only needs to remember nonces for as long as
 	// a captured request could still pass the clock-skew check.
@@ -97,6 +99,10 @@ func run() error {
 			DevVerifier: devVerifier,
 			Devices:     devices,
 			Sessions:    sessions,
+			Posture:     postureStore,
+
+			PostureWeights:       cfg.Posture.Weights,
+			ExpectedAgentVersion: cfg.Posture.ExpectedAgentVersion,
 		}),
 		ReadHeaderTimeout: cfg.HTTP.ReadTimeout,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,

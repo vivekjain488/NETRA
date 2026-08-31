@@ -59,6 +59,36 @@ pub struct EnrollResponse {
     pub key_protection: String,
 }
 
+/// A posture report. The agent sends observations only: there is no score
+/// field, because the endpoint does not decide its own trustworthiness.
+#[derive(Debug, Serialize)]
+pub struct PostureReport {
+    pub signals: netra_collect::posture::PostureSignals,
+}
+
+/// One contribution to the device trust score, as explained by the backend.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PostureFactor {
+    /// Stable identifier for the control, for anything that needs to match on
+    /// it rather than display it.
+    #[allow(dead_code)]
+    pub code: String,
+    pub label: String,
+    pub contribution: i32,
+    pub maximum: i32,
+    #[serde(default)]
+    pub detail: String,
+}
+
+/// The scored assessment the control plane returns.
+#[derive(Debug, Deserialize)]
+pub struct PostureResponse {
+    pub trust_score: i32,
+    #[serde(default)]
+    pub weakest: Vec<PostureFactor>,
+    pub model_version: String,
+}
+
 /// The agent's periodic liveness report.
 #[derive(Debug, Serialize)]
 pub struct HeartbeatRequest {
@@ -141,6 +171,24 @@ impl BackendClient {
 
         response
             .json::<HeartbeatResponse>()
+            .await
+            .map_err(|e| TransportError::Decode(e.to_string()))
+    }
+
+    /// Submits a device-signed posture report and returns the backend's score.
+    pub async fn posture(
+        &self,
+        key: &DeviceKey,
+        device_uid: &str,
+        report: &PostureReport,
+    ) -> Result<PostureResponse, TransportError> {
+        let body = serde_json::to_vec(report).map_err(|e| TransportError::Decode(e.to_string()))?;
+        let response = self
+            .signed_post(key, device_uid, "/api/v1/agent/posture", body)
+            .await?;
+
+        response
+            .json::<PostureResponse>()
             .await
             .map_err(|e| TransportError::Decode(e.to_string()))
     }

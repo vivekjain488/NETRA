@@ -241,13 +241,62 @@ the attempt is indistinguishable from a session that does not exist (`404`).
 Sessions with their bound user, device and attestation method. `?active=true`
 restricts to sessions that have not ended.
 
+### `POST /api/v1/agent/posture` — device-signed
+
+Submits observed security signals. There is **no score field**: a report
+carrying one is rejected with `400`. The device is taken from the verified
+signature, not the body.
+
+```json
+{
+  "signals": {
+    "disk_encryption": true, "secure_boot": true, "firewall": true,
+    "screen_lock": true, "os_name": "macos", "os_version": "26.5.2",
+    "collection_errors": { "anti_malware": "macOS exposes no equivalent status" }
+  }
+}
+```
+
+Every signal is optional and three-valued: present-true, present-false, or
+absent. Absent means *not determined* and scores zero, with the reason carried
+in `collection_errors`.
+
+The response is the scored assessment, returned so the endpoint client can show
+the user their own device trust and what is reducing it:
+
+```json
+{
+  "trust_score": 87,
+  "factors": [
+    { "code": "DEVICE_IDENTITY", "label": "Device identity", "contribution": 12,
+      "maximum": 20, "source": "verified",
+      "detail": "software-protected key; hardware-backed protection is stronger" }
+  ],
+  "weakest": [ { "code": "ANTI_MALWARE", "contribution": 0, "maximum": 5 } ],
+  "verified": false,
+  "model_version": "posture-v1"
+}
+```
+
+Contributions always sum exactly to `trust_score`.
+
+### `GET /api/v1/devices/{id}/posture` — `SECURITY_ANALYST`, `ADMIN`, `AUDITOR`
+
+The device's current posture with its full explanation and the raw signals.
+
+### `GET /api/v1/devices/{id}/posture/history` — same roles
+
+Recent assessments, newest first, so an investigator can see *when* a control
+was turned off rather than only that it is off now. `?limit=` 1–200.
+
+`GET /api/v1/devices` now carries `trust_score` per device.
+
 ## Planned
 
 ### Agent plane
 
 | Method | Path | Phase |
 |---|---|---|
-| POST | `/api/v1/agent/posture` | 5 |
 | POST | `/api/v1/agent/events` | 6 |
 | GET | `/api/v1/agent/policy` | 9 |
 

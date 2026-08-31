@@ -139,6 +139,17 @@ export function App() {
         </dl>
       </section>
 
+      {device && device.trustWeaknesses.length > 0 && (
+        <section className="mt-6 rounded-lg border bg-card px-6 py-5">
+          <div className="text-sm font-medium">What is reducing device trust</div>
+          <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+            {device.trustWeaknesses.map((weakness) => (
+              <li key={weakness}>{weakness}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <SignIn session={session} disabled={agentDown} onChanged={refresh} />
 
       <p className="mt-6 text-xs leading-relaxed text-muted-foreground">

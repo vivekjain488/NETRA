@@ -28,6 +28,13 @@ pub struct AgentStatus {
     pub last_heartbeat: Option<String>,
     pub queued_events: usize,
     pub dropped_events: u64,
+    /// The trust score most recently returned by the control plane.
+    ///
+    /// It is stored, never computed here: the endpoint learns its score from
+    /// the backend rather than deciding it.
+    pub trust_score: Option<i32>,
+    /// The controls that lost the most points, so the user can see what to fix.
+    pub trust_weaknesses: Vec<String>,
 }
 
 impl AgentStatus {
@@ -48,6 +55,8 @@ impl AgentStatus {
             "last_heartbeat": self.last_heartbeat,
             "queued_events": self.queued_events,
             "dropped_events": self.dropped_events,
+            "trust_score": self.trust_score,
+            "trust_weaknesses": self.trust_weaknesses,
         })
     }
 }

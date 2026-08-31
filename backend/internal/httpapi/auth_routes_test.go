@@ -101,6 +101,18 @@ func (f *fakeAudit) actions() []string {
 	return out
 }
 
+// testConfig is the configuration shared by the HTTP test harnesses.
+func testConfig() *config.Config {
+	return &config.Config{
+		Env:  config.EnvDevelopment,
+		HTTP: config.HTTPConfig{AllowedOrigins: []string{"http://localhost:5173"}},
+	}
+}
+
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
 // ── Harness ─────────────────────────────────────────────────────────────────
 
 type harness struct {

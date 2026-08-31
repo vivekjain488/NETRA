@@ -175,6 +175,58 @@ printf '{"token":"%s","method":"status","params":{}}\n' "$(cat "$STATE/ipc.token
   | nc -U "$(cat "$STATE/agent.endpoint")"
 ```
 
+## Device posture
+
+The agent collects security signals on a slow schedule
+(`NETRA_AGENT_POSTURE_INTERVAL`, default 10 minutes) rather than every
+heartbeat: the probes spawn system utilities, and running them every thirty
+seconds would be exactly the continuous endpoint load the design rules out.
+
+### Required permissions
+
+Collection runs as the agent's own account. Nothing on macOS needs elevation.
+
+| Signal | macOS | Windows |
+|---|---|---|
+| Disk encryption | `fdesetup status` — standard user | `Get-BitLockerVolume` — **usually requires administrator** |
+| Boot / system integrity | `csrutil status` — standard user | `Confirm-SecureBootUEFI` — standard user |
+| Host firewall | `socketfilterfw --getglobalstate` — standard user | `Get-NetFirewallProfile` — standard user |
+| Screen lock | `sysadminctl -screenLock status` — standard user | `HKCU\Control Panel\Desktop` — standard user |
+| Malware protection | not available — macOS exposes no equivalent status | `Get-MpComputerStatus` — standard user |
+
+Where a signal cannot be determined it is reported as **unknown with the
+reason**, never guessed. On a device without administrator rights, BitLocker
+status is therefore absent and the device scores zero for encryption — which is
+correct: NETRA has not established that the disk is encrypted.
+
+Two macOS notes worth knowing, both learned the hard way:
+
+- The `com.apple.alf` preference domain no longer exists on current macOS.
+  Reading it left the firewall signal permanently unknown; `socketfilterfw` is
+  the working source.
+- `sysadminctl` writes its result to **stderr** while exiting successfully, so
+  the probe helper falls back to stderr when stdout is empty.
+
+### Scoring
+
+The endpoint never scores itself. Weights are configuration and must sum to
+100:
+
+```env
+NETRA_POSTURE_WEIGHT_DEVICE_IDENTITY=20
+NETRA_POSTURE_WEIGHT_AGENT_HEALTH=15
+NETRA_POSTURE_WEIGHT_DISK_ENCRYPTION=20
+NETRA_POSTURE_WEIGHT_SECURE_BOOT=15
+NETRA_POSTURE_WEIGHT_OS_SUPPORTED=10
+NETRA_POSTURE_WEIGHT_FIREWALL=10
+NETRA_POSTURE_WEIGHT_SCREEN_LOCK=5
+NETRA_POSTURE_WEIGHT_ANTI_MALWARE=5
+NETRA_EXPECTED_AGENT_VERSION=0.1.0
+```
+
+The backend refuses to start if they do not sum to 100, because a score that is
+not out of 100 is not interpretable as one.
+
 ## Testing
 
 ```bash

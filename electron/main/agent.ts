@@ -35,6 +35,10 @@ export interface AgentStatus {
   last_heartbeat: string | null;
   queued_events: number;
   dropped_events: number;
+  /** Scored by the control plane, not by the agent. */
+  trust_score: number | null;
+  /** The controls that lost the most points, worst first. */
+  trust_weaknesses: string[];
 }
 
 /** A device attestation for one sign-in. */

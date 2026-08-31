@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/netra/backend/internal/posture"
 )
 
 // Environment names the deployment environment. Some development-only
@@ -33,6 +35,17 @@ type Config struct {
 	Database DatabaseConfig
 	OIDC     OIDCConfig
 	Risk     RiskThresholds
+	Posture  PostureConfig
+}
+
+// PostureConfig controls device trust scoring.
+type PostureConfig struct {
+	// Weights are the maximum points each control contributes. They must sum
+	// to 100 so the score stays interpretable as a percentage (spec §11).
+	Weights posture.Weights
+	// ExpectedAgentVersion is the agent build the fleet should be running.
+	// A device reporting an older build scores partial agent health.
+	ExpectedAgentVersion string
 }
 
 // LogConfig controls structured logging.
@@ -154,6 +167,26 @@ func Load() (*Config, error) {
 			"NETRA_OIDC_ISSUER and NETRA_OIDC_AUDIENCE are required unless NETRA_DEV_AUTH_ENABLED is set"))
 	}
 
+	weights := posture.DefaultWeights()
+	for _, binding := range []struct {
+		key    string
+		target *int
+	}{
+		{"NETRA_POSTURE_WEIGHT_DEVICE_IDENTITY", &weights.DeviceIdentity},
+		{"NETRA_POSTURE_WEIGHT_AGENT_HEALTH", &weights.AgentHealth},
+		{"NETRA_POSTURE_WEIGHT_DISK_ENCRYPTION", &weights.DiskEncryption},
+		{"NETRA_POSTURE_WEIGHT_SECURE_BOOT", &weights.SecureBoot},
+		{"NETRA_POSTURE_WEIGHT_OS_SUPPORTED", &weights.OSSupported},
+		{"NETRA_POSTURE_WEIGHT_FIREWALL", &weights.Firewall},
+		{"NETRA_POSTURE_WEIGHT_SCREEN_LOCK", &weights.ScreenLock},
+		{"NETRA_POSTURE_WEIGHT_ANTI_MALWARE", &weights.AntiMalware},
+	} {
+		value, err := intVar(binding.key, *binding.target)
+		collect(err)
+		*binding.target = value
+	}
+	collect(weights.Validate())
+
 	logLevel := strings.ToLower(stringVar("NETRA_LOG_LEVEL", "info"))
 	switch logLevel {
 	case "debug", "info", "warn", "error":
@@ -194,6 +227,10 @@ func Load() (*Config, error) {
 			DevAuthTTL:     devAuthTTL,
 		},
 		Risk: RiskThresholds{Low: low, Medium: medium, Elevated: elevated, High: high},
+		Posture: PostureConfig{
+			Weights:              weights,
+			ExpectedAgentVersion: stringVar("NETRA_EXPECTED_AGENT_VERSION", ""),
+		},
 	}
 	collect(cfg.Risk.Validate())
 

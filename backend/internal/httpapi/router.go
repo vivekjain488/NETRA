@@ -11,6 +11,7 @@ import (
 	"github.com/netra/backend/internal/config"
 	"github.com/netra/backend/internal/device"
 	"github.com/netra/backend/internal/identity"
+	"github.com/netra/backend/internal/posture"
 	"github.com/netra/backend/internal/user"
 )
 
@@ -36,6 +37,12 @@ type Options struct {
 	Devices DeviceService
 	// Sessions backs session establishment and the SOC session views.
 	Sessions SessionService
+	// Posture backs device posture scoring and its SOC views.
+	Posture PostureService
+	// PostureWeights is the scoring model applied to reported signals.
+	PostureWeights posture.Weights
+	// ExpectedAgentVersion is the agent build the fleet should be running.
+	ExpectedAgentVersion string
 }
 
 // NewRouter builds the versioned NETRA API.
@@ -80,7 +87,11 @@ func NewRouter(opts Options) http.Handler {
 
 		// ── Agent plane: authenticated by the device key, not by a user ───
 		if opts.Devices != nil {
-			deviceAPI := &deviceHandler{devices: opts.Devices, recorder: opts.Audit}
+			deviceAPI := &deviceHandler{
+				devices:  opts.Devices,
+				recorder: opts.Audit,
+				posture:  opts.Posture,
+			}
 
 			// Enrollment is the one agent route without device authentication:
 			// the device has no identity yet. The single-use enrollment token
@@ -94,6 +105,16 @@ func NewRouter(opts Options) http.Handler {
 					WriteProblem: WriteProblem,
 				}))
 				agent.Post("/agent/heartbeat", deviceAPI.heartbeat)
+
+				if opts.Posture != nil {
+					postureAPI := &postureHandler{
+						posture:       opts.Posture,
+						recorder:      opts.Audit,
+						weights:       opts.PostureWeights,
+						expectedAgent: opts.ExpectedAgentVersion,
+					}
+					agent.Post("/agent/posture", postureAPI.submit)
+				}
 			})
 		}
 
@@ -139,7 +160,11 @@ func NewRouter(opts Options) http.Handler {
 		}
 
 		if opts.Devices != nil {
-			deviceAPI := &deviceHandler{devices: opts.Devices, recorder: opts.Audit}
+			deviceAPI := &deviceHandler{
+				devices:  opts.Devices,
+				recorder: opts.Audit,
+				posture:  opts.Posture,
+			}
 
 			// Reading the fleet is an investigation activity.
 			v1.Group(func(soc chi.Router) {
@@ -148,6 +173,17 @@ func NewRouter(opts Options) http.Handler {
 					roleSet(identity.RoleAnalyst, identity.RoleAdmin, identity.RoleAuditor)...))
 				soc.Get("/devices", deviceAPI.listDevices)
 				soc.Get("/devices/{id}", deviceAPI.getDevice)
+
+				if opts.Posture != nil {
+					postureAPI := &postureHandler{
+						posture:       opts.Posture,
+						recorder:      opts.Audit,
+						weights:       opts.PostureWeights,
+						expectedAgent: opts.ExpectedAgentVersion,
+					}
+					soc.Get("/devices/{id}/posture", postureAPI.latest)
+					soc.Get("/devices/{id}/posture/history", postureAPI.history)
+				}
 			})
 
 			// Issuing enrollment tokens and revoking devices change what the

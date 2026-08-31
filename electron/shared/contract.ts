@@ -43,6 +43,11 @@ export interface DeviceStatus {
   identityRevoked: boolean;
   /** Events held locally while the backend is unreachable. */
   queuedEvents: Available<number>;
+  /**
+   * What cost this device the most trust, worst first. Shown so the user can
+   * act rather than merely being given a number.
+   */
+  trustWeaknesses: string[];
 }
 
 /** The current session, if the user is signed in. */

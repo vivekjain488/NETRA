@@ -15,6 +15,7 @@
 
 pub mod host;
 pub mod platform;
+pub mod posture;
 
 use netra_core::Event;
 

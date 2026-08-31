@@ -96,7 +96,7 @@ console stops it on its very next heartbeat.
 
 ## Status
 
-Phases 1 to 4 of 16 are complete. This table is the honest state of the build; nothing
+Phases 1 to 5 of 16 are complete. This table is the honest state of the build; nothing
 below is claimed working unless it has been run.
 
 | Phase | Scope | Status |
@@ -105,7 +105,7 @@ below is claimed working unless it has been run.
 | 2 | OIDC authentication (Keycloak), RBAC, hash-chained audit | **Done** (interactive client sign-in pending) |
 | 3 | Device enrollment and Ed25519 device identity | **Done** |
 | 4 | Client ↔ agent IPC and session attestation | **Done** |
-| 5 | Device posture and trust score | Not started |
+| 5 | Device posture and trust score | **Done** |
 | 6 | Telemetry pipeline and local filtering | Not started |
 | 7 | Risk engine | Not started |
 | 8 | Behavioural baseline and analytics | Not started |

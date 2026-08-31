@@ -26,7 +26,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::enrollment::EnrolledIdentity;
 use crate::status::{AgentStatus, SharedStatus};
-use crate::transport::{BackendClient, HeartbeatRequest, TransportError};
+use crate::transport::{BackendClient, HeartbeatRequest, PostureReport, TransportError};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -147,6 +147,12 @@ async fn run(
     // load on both endpoint and backend.
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    // Posture probes spawn system utilities, so they run on their own, much
+    // slower schedule than the heartbeat (spec §45). The first tick fires
+    // immediately so a device reports its posture as soon as it starts.
+    let mut posture_ticker = tokio::time::interval(config.posture_interval);
+    posture_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     let mut beats: u64 = 0;
     let mut identity_rejected = false;
 
@@ -245,6 +251,66 @@ async fn run(
                             "heartbeat failed; continuing to queue locally"
                         );
                         status.update(|s| s.connected = false).await;
+                    }
+                }
+            }
+            _ = posture_ticker.tick() => {
+                let Some(identity) = identity else { continue };
+                if identity_rejected {
+                    continue;
+                }
+
+                // Collection shells out to system utilities, so it runs on the
+                // blocking pool rather than stalling the async runtime.
+                let signals = match tokio::task::spawn_blocking(netra_collect::posture::collect).await {
+                    Ok(signals) => signals,
+                    Err(err) => {
+                        warn!(error = %err, "posture collection task failed");
+                        continue;
+                    }
+                };
+
+                let determined = signals.determined_count();
+                let unknown = signals.collection_errors.len();
+
+                match client
+                    .posture(&identity.key, &identity.registration.device_uid, &PostureReport { signals })
+                    .await
+                {
+                    Ok(response) => {
+                        let weaknesses: Vec<String> = response
+                            .weakest
+                            .iter()
+                            .map(|f| {
+                                format!(
+                                    "{} [{}/{}] — {}",
+                                    f.label, f.contribution, f.maximum, f.detail
+                                )
+                            })
+                            .collect();
+
+                        info!(
+                            trust_score = response.trust_score,
+                            model = %response.model_version,
+                            signals_determined = determined,
+                            signals_unknown = unknown,
+                            "posture reported and scored by the control plane"
+                        );
+
+                        status
+                            .update(|s| {
+                                s.trust_score = Some(response.trust_score);
+                                s.trust_weaknesses = weaknesses;
+                            })
+                            .await;
+                    }
+                    Err(TransportError::Unauthorized) => {
+                        error!("the control plane rejected this device while reporting posture");
+                        identity_rejected = true;
+                        status.update(|s| s.identity_rejected = true).await;
+                    }
+                    Err(err) => {
+                        warn!(error = %err, "posture report failed; will retry on the next cycle");
                     }
                 }
             }

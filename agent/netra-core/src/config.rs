@@ -20,6 +20,12 @@ pub struct AgentConfig {
     pub backend_url: String,
     /// Interval between heartbeats.
     pub heartbeat_interval: Duration,
+    /// Interval between posture collections.
+    ///
+    /// Much longer than the heartbeat: posture probes spawn system utilities,
+    /// and running them every thirty seconds would be exactly the kind of
+    /// continuous endpoint load spec §45 rules out.
+    pub posture_interval: Duration,
     /// Maximum events retained locally while the backend is unreachable.
     pub queue_max_events: usize,
     /// Maximum bytes retained locally while the backend is unreachable.
@@ -33,6 +39,7 @@ impl Default for AgentConfig {
         Self {
             backend_url: "http://localhost:8080".to_string(),
             heartbeat_interval: Duration::from_secs(30),
+            posture_interval: Duration::from_secs(600),
             // Bounded by both count and bytes (spec §15): local storage must
             // never grow without limit on a government endpoint.
             queue_max_events: 10_000,
@@ -62,6 +69,13 @@ impl AgentConfig {
             cfg.heartbeat_interval = parse_duration(&raw).ok_or(ConfigError::Invalid {
                 key: "NETRA_AGENT_HEARTBEAT_INTERVAL",
                 reason: format!("expected a duration such as 30s, got {raw:?}"),
+            })?;
+        }
+
+        if let Some(raw) = non_empty("NETRA_AGENT_POSTURE_INTERVAL") {
+            cfg.posture_interval = parse_duration(&raw).ok_or(ConfigError::Invalid {
+                key: "NETRA_AGENT_POSTURE_INTERVAL",
+                reason: format!("expected a duration such as 10m, got {raw:?}"),
             })?;
         }
 
@@ -122,6 +136,10 @@ mod tests {
         assert!(cfg.queue_max_events > 0, "queue must be bounded by count");
         assert!(cfg.queue_max_bytes > 0, "queue must be bounded by size");
         assert!(cfg.heartbeat_interval > Duration::ZERO);
+        assert!(
+            cfg.posture_interval > cfg.heartbeat_interval,
+            "posture probes spawn processes and must run far less often than heartbeats"
+        );
     }
 
     #[test]
