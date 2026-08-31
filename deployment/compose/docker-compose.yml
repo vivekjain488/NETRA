@@ -1,0 +1,90 @@
+# NETRA local development stack.
+#
+#   docker compose -f deployment/compose/docker-compose.yml up
+#
+# Everything runs on infrastructure the operator controls: there is no
+# dependency on any cloud provider or third-party SaaS (spec §35, §36).
+
+name: netra
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: netra-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-netra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-netra}
+    ports:
+      # Host port is configurable: a developer machine often already runs
+      # PostgreSQL or another project's container on 5432.
+      - "${NETRA_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netra} -d ${POSTGRES_DB:-netra}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/backend.Dockerfile
+    container_name: netra-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NETRA_ENV: ${NETRA_ENV:-development}
+      NETRA_LOG_LEVEL: ${NETRA_LOG_LEVEL:-info}
+      NETRA_LOG_FORMAT: ${NETRA_LOG_FORMAT:-json}
+      NETRA_HTTP_ADDR: ":8080"
+      NETRA_DATABASE_URL: postgres://${POSTGRES_USER:-netra}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-netra}?sslmode=disable
+      NETRA_DB_AUTO_MIGRATE: "true"
+      NETRA_CORS_ALLOWED_ORIGINS: ${NETRA_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:8090}
+      NETRA_OIDC_ISSUER: ${NETRA_OIDC_ISSUER:-http://keycloak:8080/realms/netra}
+      NETRA_OIDC_CLIENT_ID: ${NETRA_OIDC_CLIENT_ID:-netra-client}
+      NETRA_OIDC_AUDIENCE: ${NETRA_OIDC_AUDIENCE:-netra-backend}
+      NETRA_RISK_THRESHOLD_LOW: ${NETRA_RISK_THRESHOLD_LOW:-30}
+      NETRA_RISK_THRESHOLD_MEDIUM: ${NETRA_RISK_THRESHOLD_MEDIUM:-50}
+      NETRA_RISK_THRESHOLD_ELEVATED: ${NETRA_RISK_THRESHOLD_ELEVATED:-70}
+      NETRA_RISK_THRESHOLD_HIGH: ${NETRA_RISK_THRESHOLD_HIGH:-85}
+    ports:
+      - "${NETRA_BACKEND_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/dashboard.Dockerfile
+      args:
+        VITE_NETRA_API_URL: ${NETRA_PUBLIC_API_URL:-http://localhost:8080}
+    container_name: netra-dashboard
+    depends_on:
+      - backend
+    ports:
+      - "${NETRA_DASHBOARD_PORT:-8090}:80"
+    restart: unless-stopped
+
+  # Development identity provider (spec §6: NETRA never stores passwords).
+  # Started only with `--profile identity` until Phase 2 consumes it, so the
+  # default stack stays light.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: netra-keycloak
+    profiles: ["identity"]
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set in .env}
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ../keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "${NETRA_KEYCLOAK_PORT:-8081}:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

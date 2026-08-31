@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/*
+ * The endpoint client is calm by design (spec §52). The user should see a
+ * quiet status surface, not a security console. Colour appears only when the
+ * user's access is actually affected.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.18 0.01 250);
+  --card: oklch(1 0 0);
+  --muted-foreground: oklch(0.5 0.01 250);
+  --border: oklch(0.9 0.005 250);
+  --ok: oklch(0.62 0.13 155);
+  --warn: oklch(0.75 0.14 85);
+  --bad: oklch(0.58 0.2 25);
+}
+
+.dark {
+  --background: oklch(0.17 0.008 250);
+  --foreground: oklch(0.94 0.004 250);
+  --card: oklch(0.21 0.01 250);
+  --muted-foreground: oklch(0.68 0.01 250);
+  --border: oklch(0.29 0.01 250);
+  --ok: oklch(0.72 0.14 155);
+  --warn: oklch(0.82 0.14 85);
+  --bad: oklch(0.66 0.2 25);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    margin: 0;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+}

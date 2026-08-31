@@ -1,0 +1,13 @@
+[package]
+name = "netra-collect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "NETRA telemetry collectors. Platform backends are selected at compile time."
+
+[dependencies]
+netra-core = { path = "../netra-core" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

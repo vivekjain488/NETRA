@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+/*
+ * NETRA SOC theme.
+ *
+ * Spec §49: a clean, professional operations interface. No neon, no clichés.
+ * The only saturated colours in the palette are the severity colours, so that
+ * anything coloured on screen carries meaning.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.18 0.01 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 250);
+  --muted: oklch(0.96 0.003 250);
+  --muted-foreground: oklch(0.5 0.01 250);
+  --border: oklch(0.9 0.005 250);
+  --input: oklch(0.9 0.005 250);
+  --primary: oklch(0.55 0.12 240);
+  --primary-foreground: oklch(0.99 0 0);
+  --accent: oklch(0.95 0.01 250);
+  --accent-foreground: oklch(0.2 0.01 250);
+  --ring: oklch(0.6 0.1 240);
+  --radius: 0.5rem;
+
+  /* Severity scale — the single source of truth for risk colour. */
+  --sev-low: oklch(0.62 0.13 155);
+  --sev-medium: oklch(0.75 0.14 85);
+  --sev-elevated: oklch(0.7 0.16 55);
+  --sev-high: oklch(0.62 0.19 30);
+  --sev-critical: oklch(0.55 0.22 15);
+}
+
+.dark {
+  --background: oklch(0.16 0.008 250);
+  --foreground: oklch(0.94 0.004 250);
+  --card: oklch(0.2 0.01 250);
+  --card-foreground: oklch(0.94 0.004 250);
+  --muted: oklch(0.25 0.01 250);
+  --muted-foreground: oklch(0.68 0.01 250);
+  --border: oklch(0.29 0.01 250);
+  --input: oklch(0.29 0.01 250);
+  --primary: oklch(0.7 0.12 235);
+  --primary-foreground: oklch(0.16 0.008 250);
+  --accent: oklch(0.26 0.012 250);
+  --accent-foreground: oklch(0.94 0.004 250);
+  --ring: oklch(0.6 0.1 235);
+
+  --sev-low: oklch(0.72 0.14 155);
+  --sev-medium: oklch(0.82 0.14 85);
+  --sev-elevated: oklch(0.76 0.16 55);
+  --sev-high: oklch(0.68 0.19 30);
+  --sev-critical: oklch(0.62 0.22 15);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ring: var(--ring);
+
+  --color-sev-low: var(--sev-low);
+  --color-sev-medium: var(--sev-medium);
+  --color-sev-elevated: var(--sev-elevated);
+  --color-sev-high: var(--sev-high);
+  --color-sev-critical: var(--sev-critical);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Tabular figures keep risk scores from shifting as they update. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

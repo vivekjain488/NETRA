@@ -1,0 +1,19 @@
+[package]
+name = "netra-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "NETRA endpoint agent service."
+
+[[bin]]
+name = "netra-agent"
+path = "src/main.rs"
+
+[dependencies]
+netra-core = { path = "../netra-core" }
+netra-collect = { path = "../netra-collect" }
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
