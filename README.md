@@ -45,9 +45,17 @@ client can set, hint at, or lower its own score. See
 Requires Docker, Go 1.25+, Rust 1.80+ and Node 20+.
 
 ```bash
-cp .env.example .env      # adjust ports if 5432/8080 are taken on your machine
+make env                  # creates .env, generating a random value per secret
 make up                   # postgres + backend + dashboard
 make test                 # every test suite
+```
+
+Adjust `NETRA_*_PORT` in `.env` if 5432 or 8080 are already taken on your
+machine. To bring up Keycloak as well:
+
+```bash
+make identity-up          # adds the identity provider
+make identity-passwords   # applies demo user passwords from .env
 ```
 
 Then:
@@ -64,13 +72,13 @@ make run-client           # Electron client
 
 ## Status
 
-Phase 1 of 16 is complete. This table is the honest state of the build; nothing
+Phases 1 and 2 of 16 are complete. This table is the honest state of the build; nothing
 below is claimed working unless it has been run.
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Repository, Docker stack, backend/agent/client/dashboard skeletons | **Done** |
-| 2 | OIDC authentication (Keycloak), RBAC, audit | Not started |
+| 2 | OIDC authentication (Keycloak), RBAC, hash-chained audit | **Done** |
 | 3 | Device enrollment and Ed25519 device identity | Not started |
 | 4 | Client ↔ agent IPC and session attestation | Not started |
 | 5 | Device posture and trust score | Not started |

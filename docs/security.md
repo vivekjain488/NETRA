@@ -11,9 +11,9 @@ planned, without conflating the two.
 | B1 | Renderer → Electron main | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict CSP, explicit preload allowlist | Implemented |
 | B2 | Electron → agent | Named pipe (Windows ACL) / Unix socket (0600), per-boot token, peer verification | Phase 4 |
 | B3 | Agent → backend | mTLS plus Ed25519 request signing with nonce and timestamp | Phase 3 / 15 |
-| B4 | Client → backend | OIDC JWT validated against JWKS, **plus** device attestation | Phase 2 / 4 |
+| B4 | Client → backend | OIDC JWT validated against JWKS, **plus** device attestation | JWT done; attestation Phase 4 |
 | B5 | Backend → database | Least-privilege role, parameterised queries only | Implemented |
-| B6 | SOC → backend | RBAC per route, every privileged action audited | Phase 2 |
+| B6 | SOC → backend | RBAC per route, every privileged action audited | Implemented |
 | B7 | Demo apps → backend | Access decisions come from the policy API; apps hold no policy logic | Phase 11 |
 
 ## Invariants
@@ -66,6 +66,43 @@ no real credentials.
 
 **Container hardening.** Multi-stage builds, no toolchain in the runtime layer,
 non-root user, healthchecks.
+
+**Identity, never passwords.** NETRA delegates authentication entirely. Tokens
+are validated for signature, issuer, audience and expiry; the audience check is
+mandatory, because without it a token minted for any other client of the same
+realm would be accepted here. A rejected token yields a generic 401: telling a
+caller whether a token was expired, wrongly signed or wrongly addressed turns
+the endpoint into a probing oracle.
+
+**Roles from the token, not the row.** The identity provider is authoritative,
+so a role revoked upstream takes effect on the very next request rather than
+when a cached copy expires. Role names NETRA does not define are discarded, so
+an identity provider compromise cannot invent new authority inside NETRA.
+
+**Immediate account disablement.** A disabled user presenting a still-valid
+token is refused and the refusal is audited.
+
+**A contained development authenticator.** `NETRA_DEV_AUTH_ENABLED` mints local
+tokens so tests and demonstrations do not require a live identity provider.
+Four properties contain it: configuration load fails unless
+`NETRA_ENV=development`; the signing key is random per process and never
+written to disk; it accepts only its own non-URL issuer, so it can never
+validate something claiming to come from the real provider; and the route is
+not mounted at all when it is off. Each of these is covered by a test.
+
+**Audit that resists rewriting.** Every record commits to its predecessor's
+hash. Appends are serialised by a PostgreSQL advisory lock so two writers
+cannot fork the chain. Verification is exposed on the read API, so an analyst
+sees whether the log can be trusted; editing a row directly in the database is
+detected and the breaking sequence number reported. Authorization denials and
+audit reads are themselves audited. Authentication *failures* are logged but
+not audited: anonymous traffic would otherwise let anyone grow the audit table
+without limit.
+
+**Generated secrets, never committed ones.** `.env.example` ships every secret
+blank and `make env` generates a random 32-character value for each. A shared
+default development password is the first thing an attacker tries, and the
+habit follows the code into production.
 
 **Dependency hygiene.** `npm audit` reports zero vulnerabilities across both
 Node projects. Electron was upgraded from 33 to 44 during Phase 1 specifically

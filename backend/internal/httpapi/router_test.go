@@ -199,4 +199,3 @@ func TestRecovererHidesPanicDetail(t *testing.T) {
 		t.Errorf("panic detail leaked to client: %s", rec.Body.String())
 	}
 }
-

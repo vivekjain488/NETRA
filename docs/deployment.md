@@ -7,7 +7,7 @@ third-party telemetry or SaaS service.
 ## Local stack
 
 ```bash
-cp .env.example .env
+make env    # generates .env with a random value for every secret
 make up
 ```
 
@@ -18,13 +18,16 @@ Brings up:
 | `postgres` | `postgres:16-alpine` | `${NETRA_POSTGRES_PORT}` | System of record |
 | `backend` | built from source | `${NETRA_BACKEND_PORT}` | Control plane |
 | `dashboard` | built from source, nginx | `${NETRA_DASHBOARD_PORT}` | SOC console |
-| `keycloak` | `quay.io/keycloak/keycloak:26.0` | `${NETRA_KEYCLOAK_PORT}` | Identity provider (profile `identity`, from Phase 2) |
-
-Keycloak sits behind a Compose profile so the default stack stays light:
+Keycloak lives in a separate overlay file rather than the base stack:
 
 ```bash
-docker compose -f deployment/compose/docker-compose.yml --profile identity up
+make identity-up
 ```
+
+An overlay is used instead of a Compose profile because Compose interpolates
+the entire file regardless of which services start — a required-variable check
+on Keycloak would otherwise block the base stack for anyone who has not
+configured an identity provider yet.
 
 Useful targets: `make down` (stop, keep data), `make clean` (stop and delete the
 volume), `make logs`, `make ps`.
@@ -51,7 +54,8 @@ increasing at load, so a misconfiguration cannot silently produce a nonsensical
 banding.
 
 `POSTGRES_PASSWORD` and `KEYCLOAK_ADMIN_PASSWORD` use the Compose `:?` operator
-and fail the stack rather than defaulting to a known value.
+and fail the stack rather than defaulting to a known value. `make env`
+generates both, so no credential is ever committed.
 
 ## Migrations
 

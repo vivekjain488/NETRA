@@ -9,18 +9,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/netra/backend/internal/logging"
+	"github.com/netra/backend/internal/reqctx"
 )
 
 // RequestIDHeader is the header carrying the correlation identifier. It is
 // echoed on every response, including errors (spec §40).
 const RequestIDHeader = "X-Request-ID"
 
-type requestIDKey struct{}
-
 // RequestIDFromContext returns the request identifier, or "" if unset.
 func RequestIDFromContext(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey{}).(string)
-	return id
+	return reqctx.RequestID(ctx)
 }
 
 // RequestID assigns a correlation identifier to every request and echoes it.
@@ -31,7 +29,7 @@ func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := uuid.NewString()
 		w.Header().Set(RequestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id)))
+		next.ServeHTTP(w, r.WithContext(reqctx.WithRequestID(r.Context(), id)))
 	})
 }
 

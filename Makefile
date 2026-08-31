@@ -3,15 +3,16 @@
 # Every target here is used by CI and by the demo runbook, so a command that
 # works locally works the same way in the pipeline.
 
-COMPOSE := docker compose --env-file .env -f deployment/compose/docker-compose.yml
+COMPOSE  := docker compose --env-file .env -f deployment/compose/docker-compose.yml
+IDENTITY := $(COMPOSE) -f deployment/compose/identity.yml
 
 .PHONY: help
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: env
-env: ## Create .env from the template if it does not exist
-	@test -f .env || (cp .env.example .env && echo "created .env from .env.example")
+env: ## Create .env, generating a random value for every blank secret
+	@./scripts/init-env.sh
 
 .PHONY: up
 up: env ## Start the local stack (postgres, backend, dashboard)
@@ -19,11 +20,19 @@ up: env ## Start the local stack (postgres, backend, dashboard)
 
 .PHONY: down
 down: ## Stop the stack, keeping data
-	$(COMPOSE) down
+	$(IDENTITY) down
 
 .PHONY: clean
 clean: ## Stop the stack and delete its data volume
-	$(COMPOSE) down -v
+	$(IDENTITY) down -v
+
+.PHONY: identity-up
+identity-up: env ## Start the stack including Keycloak
+	$(IDENTITY) up -d --build
+
+.PHONY: identity-passwords
+identity-passwords: ## Apply demo user passwords from .env to Keycloak
+	@set -a; . ./.env; set +a; ./deployment/keycloak/set-demo-passwords.sh
 
 .PHONY: logs
 logs: ## Follow backend logs

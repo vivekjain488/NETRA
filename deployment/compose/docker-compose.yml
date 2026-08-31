@@ -47,6 +47,10 @@ services:
       NETRA_OIDC_ISSUER: ${NETRA_OIDC_ISSUER:-http://keycloak:8080/realms/netra}
       NETRA_OIDC_CLIENT_ID: ${NETRA_OIDC_CLIENT_ID:-netra-client}
       NETRA_OIDC_AUDIENCE: ${NETRA_OIDC_AUDIENCE:-netra-backend}
+      # Locally minted development tokens. The backend refuses this unless
+      # NETRA_ENV=development, so it cannot be turned on in a deployment.
+      NETRA_DEV_AUTH_ENABLED: ${NETRA_DEV_AUTH_ENABLED:-false}
+      NETRA_DEV_AUTH_TTL: ${NETRA_DEV_AUTH_TTL:-1h}
       NETRA_RISK_THRESHOLD_LOW: ${NETRA_RISK_THRESHOLD_LOW:-30}
       NETRA_RISK_THRESHOLD_MEDIUM: ${NETRA_RISK_THRESHOLD_MEDIUM:-50}
       NETRA_RISK_THRESHOLD_ELEVATED: ${NETRA_RISK_THRESHOLD_ELEVATED:-70}
@@ -66,24 +70,6 @@ services:
       - backend
     ports:
       - "${NETRA_DASHBOARD_PORT:-8090}:80"
-    restart: unless-stopped
-
-  # Development identity provider (spec §6: NETRA never stores passwords).
-  # Started only with `--profile identity` until Phase 2 consumes it, so the
-  # default stack stays light.
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.0
-    container_name: netra-keycloak
-    profiles: ["identity"]
-    command: ["start-dev", "--import-realm", "--http-port=8080"]
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set in .env}
-      KC_HEALTH_ENABLED: "true"
-    volumes:
-      - ../keycloak:/opt/keycloak/data/import:ro
-    ports:
-      - "${NETRA_KEYCLOAK_PORT:-8081}:8080"
     restart: unless-stopped
 
 volumes:

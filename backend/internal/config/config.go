@@ -58,12 +58,17 @@ type DatabaseConfig struct {
 	AutoMigrate bool
 }
 
-// OIDCConfig describes the identity provider. Consumed from Phase 2 onward;
-// resolved here so that configuration is externalised from the outset.
+// OIDCConfig describes the identity provider.
 type OIDCConfig struct {
 	Issuer   string
 	ClientID string
 	Audience string
+
+	// DevAuthEnabled turns on locally minted development tokens. It is
+	// refused outside a development environment at load time, so it cannot be
+	// switched on in production by configuration alone.
+	DevAuthEnabled bool
+	DevAuthTTL     time.Duration
 }
 
 // RiskThresholds are the upper bounds (inclusive) of each risk band.
@@ -130,6 +135,25 @@ func Load() (*Config, error) {
 	high, err := intVar("NETRA_RISK_THRESHOLD_HIGH", 85)
 	collect(err)
 
+	devAuth, err := boolVar("NETRA_DEV_AUTH_ENABLED", false)
+	collect(err)
+	devAuthTTL, err := durationVar("NETRA_DEV_AUTH_TTL", time.Hour)
+	collect(err)
+
+	issuer := stringVar("NETRA_OIDC_ISSUER", "")
+	audience := stringVar("NETRA_OIDC_AUDIENCE", "")
+
+	if devAuth && env != EnvDevelopment {
+		collect(fmt.Errorf(
+			"NETRA_DEV_AUTH_ENABLED is only permitted when NETRA_ENV=development, not %q", env))
+	}
+	if !devAuth && (issuer == "" || audience == "") {
+		// Without a verifier there is no authentication at all, so refusing to
+		// start is safer than serving an unauthenticated control plane.
+		collect(errors.New(
+			"NETRA_OIDC_ISSUER and NETRA_OIDC_AUDIENCE are required unless NETRA_DEV_AUTH_ENABLED is set"))
+	}
+
 	logLevel := strings.ToLower(stringVar("NETRA_LOG_LEVEL", "info"))
 	switch logLevel {
 	case "debug", "info", "warn", "error":
@@ -163,9 +187,11 @@ func Load() (*Config, error) {
 			AutoMigrate: autoMigrate,
 		},
 		OIDC: OIDCConfig{
-			Issuer:   stringVar("NETRA_OIDC_ISSUER", ""),
-			ClientID: stringVar("NETRA_OIDC_CLIENT_ID", ""),
-			Audience: stringVar("NETRA_OIDC_AUDIENCE", ""),
+			Issuer:         issuer,
+			ClientID:       stringVar("NETRA_OIDC_CLIENT_ID", ""),
+			Audience:       audience,
+			DevAuthEnabled: devAuth,
+			DevAuthTTL:     devAuthTTL,
 		},
 		Risk: RiskThresholds{Low: low, Medium: medium, Elevated: elevated, High: high},
 	}

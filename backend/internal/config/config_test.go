@@ -9,6 +9,8 @@ import (
 func setMinimalEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("NETRA_DATABASE_URL", "postgres://u:p@localhost:5432/netra?sslmode=disable")
+	t.Setenv("NETRA_OIDC_ISSUER", "http://localhost:8081/realms/netra")
+	t.Setenv("NETRA_OIDC_AUDIENCE", "netra-backend")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -34,6 +36,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadRequiresDatabaseURL(t *testing.T) {
+	setMinimalEnv(t)
 	t.Setenv("NETRA_DATABASE_URL", "")
 
 	if _, err := Load(); err == nil {
@@ -44,6 +47,7 @@ func TestLoadRequiresDatabaseURL(t *testing.T) {
 }
 
 func TestLoadReportsAllErrorsAtOnce(t *testing.T) {
+	setMinimalEnv(t)
 	t.Setenv("NETRA_DATABASE_URL", "")
 	t.Setenv("NETRA_LOG_LEVEL", "verbose")
 	t.Setenv("NETRA_HTTP_READ_TIMEOUT", "not-a-duration")
@@ -116,5 +120,56 @@ func TestIsDevelopment(t *testing.T) {
 	}
 	if cfg.IsDevelopment() {
 		t.Error("IsDevelopment() = true for production; development-only affordances would be enabled")
+	}
+}
+
+func TestLoadRequiresAVerifier(t *testing.T) {
+	// A control plane with no way to verify identity must not start: it would
+	// serve every request unauthenticated.
+	t.Setenv("NETRA_DATABASE_URL", "postgres://u:p@localhost:5432/netra?sslmode=disable")
+	t.Setenv("NETRA_OIDC_ISSUER", "")
+	t.Setenv("NETRA_OIDC_AUDIENCE", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() succeeded with neither OIDC nor development authentication configured")
+	}
+	if !strings.Contains(err.Error(), "NETRA_OIDC_ISSUER") {
+		t.Errorf("error = %v, want it to name the missing OIDC configuration", err)
+	}
+}
+
+func TestDevAuthSatisfiesTheVerifierRequirement(t *testing.T) {
+	t.Setenv("NETRA_DATABASE_URL", "postgres://u:p@localhost:5432/netra?sslmode=disable")
+	t.Setenv("NETRA_OIDC_ISSUER", "")
+	t.Setenv("NETRA_OIDC_AUDIENCE", "")
+	t.Setenv("NETRA_DEV_AUTH_ENABLED", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if !cfg.OIDC.DevAuthEnabled {
+		t.Error("DevAuthEnabled = false, want true")
+	}
+}
+
+func TestDevAuthRefusedOutsideDevelopment(t *testing.T) {
+	// This guard is what stops a test affordance from being switched on in a
+	// deployed environment by an environment variable alone.
+	for _, env := range []string{"production", "staging"} {
+		t.Run(env, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("NETRA_ENV", env)
+			t.Setenv("NETRA_DEV_AUTH_ENABLED", "true")
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("Load() accepted development authentication in %s", env)
+			}
+			if !strings.Contains(err.Error(), "NETRA_DEV_AUTH_ENABLED") {
+				t.Errorf("error = %v, want it to name NETRA_DEV_AUTH_ENABLED", err)
+			}
+		})
 	}
 }

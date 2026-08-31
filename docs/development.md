@@ -13,13 +13,43 @@
 ## Setup
 
 ```bash
-cp .env.example .env
-make up
-make test
+make env     # creates .env, generating a random value for every blank secret
+make up      # postgres + backend + dashboard
+make test    # every suite
 ```
 
-`.env` is gitignored and must never be committed. `.env.example` contains no
-real credentials.
+`.env` is gitignored, written mode 600, and must never be committed.
+`.env.example` ships every secret blank on purpose.
+
+### Authentication during development
+
+Two options:
+
+**Locally minted tokens** (default for tests and quick work). Set
+`NETRA_DEV_AUTH_ENABLED=true` in `.env`, then:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/dev/token \
+  -H 'Content-Type: application/json' \
+  -d '{"subject":"alice","email":"alice@example.gov","roles":["USER"]}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+curl http://localhost:8080/api/v1/client/me -H "Authorization: Bearer $TOKEN"
+```
+
+The backend refuses this unless `NETRA_ENV=development`, and logs a loud
+warning while it is on.
+
+**Keycloak** (closer to a real deployment):
+
+```bash
+make identity-up          # starts Keycloak and imports the netra realm
+make identity-passwords   # sets demo user passwords from NETRA_DEMO_PASSWORD
+```
+
+The realm defines four demo users — `alice` (USER), `ravi`
+(SECURITY_ANALYST), `priya` (ADMIN), `arun` (AUDITOR) — and contains no
+credentials, which is why passwords are applied as a separate step.
 
 ### Port conflicts
 

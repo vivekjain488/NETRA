@@ -65,6 +65,72 @@ error.
 Underlying errors are logged, never returned: driver errors can quote the
 connection string.
 
+### `GET /api/v1/client/me`
+
+The authenticated caller's own identity. Requires a bearer token. An ordinary
+`USER` may see their own security state and nothing else (spec §39).
+
+```json
+{
+  "user_id": "fb2d814a-40dd-42e6-9ffb-3c6300cfcc92",
+  "subject": "alice",
+  "email": "alice.sharma@example.gov",
+  "display_name": "Alice Sharma",
+  "department": "Operations",
+  "roles": ["USER"]
+}
+```
+
+Roles come from the token rather than the stored row, so a role revoked at the
+identity provider takes effect on the very next request.
+
+### `GET /api/v1/audit`
+
+The audit log. Requires `AUDITOR`, `ADMIN` or `SECURITY_ANALYST`; a denial is
+itself audited. Query parameters: `after` (sequence cursor, default 0) and
+`limit` (1–1000, default 100).
+
+```json
+{
+  "records": [
+    {
+      "seq": 2,
+      "at": "2026-08-31T08:55:48.867856Z",
+      "actor_type": "USER",
+      "actor_id": "fb2d814a-40dd-42e6-9ffb-3c6300cfcc92",
+      "action": "auth.authorization_denied",
+      "target_type": "endpoint",
+      "target_id": "GET /api/v1/audit",
+      "result": "DENIED",
+      "request_id": "42f58013-8a13-4fa9-a58a-a6a30eece839",
+      "detail": { "required_roles": ["AUDITOR"], "held_roles": ["USER"] },
+      "hash": "10f5a54d...",
+      "prev_hash": "71cbc364..."
+    }
+  ],
+  "chain_verified": true,
+  "next_after": 2
+}
+```
+
+`chain_verified` reports whether the hash chain is intact. It travels with the
+data because an analyst reading an audit log needs to know whether it can be
+trusted; when it is `false`, `chain_error` names the sequence number where the
+chain breaks.
+
+### `POST /api/v1/dev/token` — development only
+
+Mints a locally signed token. The route is **mounted only when
+`NETRA_DEV_AUTH_ENABLED` is set**, which the configuration loader refuses
+outside `NETRA_ENV=development`. It is not present at all in a deployed
+environment, so it cannot be reached by a misconfiguration.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/dev/token \
+  -H 'Content-Type: application/json' \
+  -d '{"subject":"alice","email":"alice@example.gov","roles":["USER"]}'
+```
+
 ## Planned
 
 ### Agent plane — mTLS plus Ed25519 signed body
@@ -86,7 +152,6 @@ Headers: `X-NETRA-Device`, `X-NETRA-Nonce`, `X-NETRA-Signature`.
 |---|---|---|
 | POST | `/api/v1/client/session/begin` | 4 |
 | POST | `/api/v1/client/session/end` | 4 |
-| GET | `/api/v1/client/me` | 2 |
 | GET | `/api/v1/client/risk` | 7 |
 | GET | `/api/v1/client/policy` | 9 |
 | GET | `/api/v1/client/applications` | 11 |
@@ -105,7 +170,6 @@ Headers: `X-NETRA-Device`, `X-NETRA-Nonce`, `X-NETRA-Signature`.
 | POST | `/api/v1/incidents/{id}/notes`, `/status` | 12 |
 | GET | `/api/v1/risk/{session_id}` | 7 |
 | GET | `/api/v1/events` | 6 |
-| GET | `/api/v1/audit` | 2 |
 | GET | `/api/v1/stream` (SSE) | 10 |
 
 ### Admin plane — RBAC `ADMIN`

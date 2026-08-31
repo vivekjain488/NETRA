@@ -16,10 +16,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/netra/backend/internal/audit"
 	"github.com/netra/backend/internal/config"
 	"github.com/netra/backend/internal/httpapi"
+	"github.com/netra/backend/internal/identity"
 	"github.com/netra/backend/internal/logging"
 	"github.com/netra/backend/internal/store"
+	"github.com/netra/backend/internal/user"
 	"github.com/netra/backend/internal/version"
 )
 
@@ -65,12 +68,25 @@ func run() error {
 		logger.Warn("automatic migration is disabled; the schema must be applied out of band")
 	}
 
+	verifier, devVerifier, err := buildVerifier(cfg, logger)
+	if err != nil {
+		return err
+	}
+
+	users := user.NewStore(db.Pool())
+	auditStore := audit.NewStore(db.Pool(), logger)
+
 	srv := &http.Server{
 		Addr: cfg.HTTP.Addr,
 		Handler: httpapi.NewRouter(httpapi.Options{
-			Config: cfg,
-			Logger: logger,
-			DB:     db,
+			Config:      cfg,
+			Logger:      logger,
+			DB:          db,
+			Verifier:    verifier,
+			Users:       users,
+			Audit:       auditStore,
+			AuditReader: auditStore,
+			DevVerifier: devVerifier,
 		}),
 		ReadHeaderTimeout: cfg.HTTP.ReadTimeout,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,
@@ -142,4 +158,32 @@ func connectWithRetry(ctx context.Context, cfg config.DatabaseConfig, logger *sl
 		}
 	}
 	return nil, fmt.Errorf("database unreachable after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// buildVerifier selects the identity verifier for this environment.
+//
+// Development authentication and OIDC are mutually exclusive: allowing both at
+// once would mean a locally minted token could stand in for an
+// organisationally issued one, which is exactly the confusion the guard in the
+// configuration loader exists to prevent.
+func buildVerifier(cfg *config.Config, logger *slog.Logger) (identity.Verifier, *identity.DevVerifier, error) {
+	if cfg.OIDC.DevAuthEnabled {
+		dev, err := identity.NewDevVerifier(string(cfg.Env), cfg.OIDC.DevAuthTTL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("development authentication: %w", err)
+		}
+		logger.Warn("DEVELOPMENT AUTHENTICATION IS ENABLED",
+			slog.String("issuer", dev.Issuer()),
+			slog.String("detail", "tokens are minted locally by POST /api/v1/dev/token; never enable this outside development"))
+		return dev, dev, nil
+	}
+
+	verifier, err := identity.NewOIDCVerifier(cfg.OIDC.Issuer, cfg.OIDC.Audience)
+	if err != nil {
+		return nil, nil, fmt.Errorf("identity provider: %w", err)
+	}
+	logger.Info("identity provider configured",
+		slog.String("issuer", cfg.OIDC.Issuer),
+		slog.String("audience", cfg.OIDC.Audience))
+	return verifier, nil, nil
 }
