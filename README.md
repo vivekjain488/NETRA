@@ -70,16 +70,40 @@ make run-agent            # Rust agent, foreground
 make run-client           # Electron client
 ```
 
+### Enrolling the agent
+
+Enrollment is never anonymous — an administrator issues a single-use token:
+
+```bash
+# 1. Obtain an administrator token (development authentication)
+ADMIN=$(curl -s -X POST http://localhost:8080/api/v1/dev/token \
+  -H 'Content-Type: application/json' -d '{"subject":"priya","roles":["ADMIN"]}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# 2. Issue an enrollment token (returned once, stored only as a hash)
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/enrollment-tokens \
+  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"label":"my-laptop","ttl_minutes":30}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+
+# 3. Enrol. The agent generates its key pair and registers only the public half.
+NETRA_ENROLLMENT_TOKEN="$TOKEN" make run-agent
+```
+
+The agent stores its private key locally (mode 600, or DPAPI-wrapped on
+Windows) and signs every subsequent request with it. Revoking the device in the
+console stops it on its very next heartbeat.
+
 ## Status
 
-Phases 1 and 2 of 16 are complete. This table is the honest state of the build; nothing
+Phases 1 to 3 of 16 are complete. This table is the honest state of the build; nothing
 below is claimed working unless it has been run.
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Repository, Docker stack, backend/agent/client/dashboard skeletons | **Done** |
 | 2 | OIDC authentication (Keycloak), RBAC, hash-chained audit | **Done** |
-| 3 | Device enrollment and Ed25519 device identity | Not started |
+| 3 | Device enrollment and Ed25519 device identity | **Done** |
 | 4 | Client ↔ agent IPC and session attestation | Not started |
 | 5 | Device posture and trust score | Not started |
 | 6 | Telemetry pipeline and local filtering | Not started |

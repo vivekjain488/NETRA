@@ -10,7 +10,7 @@ planned, without conflating the two.
 |---|---|---|---|
 | B1 | Renderer → Electron main | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict CSP, explicit preload allowlist | Implemented |
 | B2 | Electron → agent | Named pipe (Windows ACL) / Unix socket (0600), per-boot token, peer verification | Phase 4 |
-| B3 | Agent → backend | mTLS plus Ed25519 request signing with nonce and timestamp | Phase 3 / 15 |
+| B3 | Agent → backend | mTLS plus Ed25519 request signing with nonce and timestamp | Signing done; mTLS Phase 15 |
 | B4 | Client → backend | OIDC JWT validated against JWKS, **plus** device attestation | JWT done; attestation Phase 4 |
 | B5 | Backend → database | Least-privilege role, parameterised queries only | Implemented |
 | B6 | SOC → backend | RBAC per route, every privileged action audited | Implemented |
@@ -98,6 +98,36 @@ detected and the breaking sequence number reported. Authorization denials and
 audit reads are themselves audited. Authentication *failures* are logged but
 not audited: anonymous traffic would otherwise let anyone grow the audit table
 without limit.
+
+**Device identity that cannot be forged or moved.** Each endpoint generates an
+Ed25519 key pair at enrollment and keeps the private half. Every agent request
+is signed over a canonical string covering the method, path, timestamp, nonce
+and a digest of the body — so a captured signature cannot be replayed, moved to
+another endpoint, or reused with an edited body. The body is covered by its
+digest rather than inline, so signing cost does not grow with a telemetry
+batch. Timestamps outside a five-minute window are rejected in **both**
+directions: accepting future timestamps would let an endpoint mint requests
+that stay valid after its key is revoked. Nonces are consumed through a unique
+constraint, so two concurrent replays cannot both pass a check and then both
+insert.
+
+**Enrollment is never anonymous.** A device is registered only against a
+single-use, expiring token issued by an administrator. Only the token's
+SHA-256 hash is stored, so reading the database does not yield a usable token,
+and the token is never written to the audit log — an audit reader must not be
+able to enrol a device from the record. Invalid and spent tokens are reported
+identically, so a guess cannot reveal whether a token was ever real. Failed
+attempts are audited; they require presenting a token value, so the volume is
+bounded.
+
+**Revocation is immediate.** A revoked device still holds a key that signs
+correctly, so state is what stops it — checked on every request, before the
+signature is even verified.
+
+**The private key has nowhere to leak to.** The `devices` table has no column
+for one, the enrollment payload has no field for one, and the agent's
+`DeviceKey` has a hand-written `Debug` implementation so an accidental `{:?}`
+cannot print it. Each of these is covered by a test.
 
 **Generated secrets, never committed ones.** `.env.example` ships every secret
 blank and `make env` generates a random 32-character value for each. A shared

@@ -9,6 +9,7 @@ import (
 	"github.com/netra/backend/internal/audit"
 	"github.com/netra/backend/internal/auth"
 	"github.com/netra/backend/internal/config"
+	"github.com/netra/backend/internal/device"
 	"github.com/netra/backend/internal/identity"
 	"github.com/netra/backend/internal/user"
 )
@@ -31,6 +32,8 @@ type Options struct {
 	// DevVerifier, when non-nil, mounts the development token endpoint.
 	// The configuration loader refuses to set this outside development.
 	DevVerifier *identity.DevVerifier
+	// Devices backs the agent and device-administration planes.
+	Devices DeviceService
 }
 
 // NewRouter builds the versioned NETRA API.
@@ -73,6 +76,25 @@ func NewRouter(opts Options) http.Handler {
 			v1.Post("/dev/token", dev.mint)
 		}
 
+		// ── Agent plane: authenticated by the device key, not by a user ───
+		if opts.Devices != nil {
+			deviceAPI := &deviceHandler{devices: opts.Devices, recorder: opts.Audit}
+
+			// Enrollment is the one agent route without device authentication:
+			// the device has no identity yet. The single-use enrollment token
+			// issued by an administrator is what authorises it.
+			v1.Post("/agent/enroll", deviceAPI.enroll)
+
+			v1.Group(func(agent chi.Router) {
+				agent.Use(device.RequireDeviceSignature(device.AuthDeps{
+					Devices:      opts.Devices,
+					Logger:       opts.Logger,
+					WriteProblem: WriteProblem,
+				}))
+				agent.Post("/agent/heartbeat", deviceAPI.heartbeat)
+			})
+		}
+
 		if opts.Verifier == nil || opts.Users == nil {
 			// Without a verifier there is nothing to authenticate against, so
 			// the authenticated planes are simply not mounted.
@@ -93,6 +115,28 @@ func NewRouter(opts Options) http.Handler {
 				soc.Use(auth.RequireRole(authDeps,
 					roleSet(identity.RoleAuditor, identity.RoleAdmin, identity.RoleAnalyst)...))
 				soc.Get("/audit", auditAPI.list)
+			})
+		}
+
+		if opts.Devices != nil {
+			deviceAPI := &deviceHandler{devices: opts.Devices, recorder: opts.Audit}
+
+			// Reading the fleet is an investigation activity.
+			v1.Group(func(soc chi.Router) {
+				soc.Use(authenticated)
+				soc.Use(auth.RequireRole(authDeps,
+					roleSet(identity.RoleAnalyst, identity.RoleAdmin, identity.RoleAuditor)...))
+				soc.Get("/devices", deviceAPI.listDevices)
+				soc.Get("/devices/{id}", deviceAPI.getDevice)
+			})
+
+			// Issuing enrollment tokens and revoking devices change what the
+			// system trusts, so they are restricted to administrators.
+			v1.Group(func(admin chi.Router) {
+				admin.Use(authenticated)
+				admin.Use(auth.RequireRole(authDeps, roleSet(identity.RoleAdmin)...))
+				admin.Post("/enrollment-tokens", deviceAPI.issueEnrollmentToken)
+				admin.Post("/devices/{id}/revoke", deviceAPI.revokeDevice)
 			})
 		}
 	})

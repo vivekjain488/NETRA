@@ -6,8 +6,14 @@
 
 pub mod config;
 pub mod event;
+pub mod identity;
+pub mod keystore;
 pub mod queue;
+pub mod state;
 
 pub use config::AgentConfig;
 pub use event::{Event, EventType, Severity};
+pub use identity::{DeviceKey, SigningInput};
+pub use keystore::{KeyStore, Protection};
 pub use queue::{EventQueue, QueueStats};
+pub use state::{DeviceRegistration, StateStore};

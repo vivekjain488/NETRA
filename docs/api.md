@@ -131,20 +131,80 @@ curl -X POST http://localhost:8080/api/v1/dev/token \
   -d '{"subject":"alice","email":"alice@example.gov","roles":["USER"]}'
 ```
 
+### `POST /api/v1/enrollment-tokens` — `ADMIN`
+
+Issues a single-use, expiring enrollment token. The plaintext is returned
+exactly once; only its SHA-256 hash is stored, and it is never written to the
+audit log.
+
+```json
+{
+  "token_id": "241ca44d-83b7-4f28-aaff-1f25865f52d0",
+  "token": "<43-character value, shown once>",
+  "expires_at": "2026-08-31T09:41:01Z",
+  "notice": "This token is shown once and can enrol exactly one device."
+}
+```
+
+### `POST /api/v1/agent/enroll`
+
+The only agent route that is not device-signed: the device has no identity yet,
+and the enrollment token is what authorises it.
+
+```json
+{
+  "enrollment_token": "...",
+  "device_uid": "netra-12dc13028a75fb18b05cad5f2494122c",
+  "hostname": "GOV-LAPTOP-01",
+  "os_name": "windows", "os_version": "11", "agent_version": "0.1.0",
+  "public_key": "<base64 Ed25519 public key>",
+  "key_protection": "software"
+}
+```
+
+`401` for an invalid or spent token, `409` for a duplicate `device_uid`, `400`
+for a malformed request. There is no field for a private key.
+
+### `POST /api/v1/agent/heartbeat` — device-signed
+
+Headers on every signed request:
+
+| Header | Value |
+|---|---|
+| `X-NETRA-Device` | the agent-generated `device_uid` |
+| `X-NETRA-Timestamp` | Unix seconds; must be within 5 minutes either way |
+| `X-NETRA-Nonce` | 16+ hex characters, never reused for this device |
+| `X-NETRA-Signature` | base64 Ed25519 over the canonical string |
+
+The canonical string is:
+
+```
+NETRA-v1\n<METHOD>\n<PATH>\n<UNIX_SECONDS>\n<NONCE>\n<SHA256(body) hex>
+```
+
+The path is included so a captured signature cannot be moved to another
+endpoint, and the body appears as a digest so signing cost does not grow with a
+telemetry batch. Any failure returns the same generic `401`.
+
+### `GET /api/v1/devices` and `GET /api/v1/devices/{id}` — `SECURITY_ANALYST`, `ADMIN`, `AUDITOR`
+
+The enrolled fleet. Public keys are deliberately not returned: they are not
+secret, but publishing every device's key serves no operational purpose.
+
+### `POST /api/v1/devices/{id}/revoke` — `ADMIN`
+
+Withdraws trust. Takes effect on the device's next request, and is audited.
+
 ## Planned
 
-### Agent plane — mTLS plus Ed25519 signed body
+### Agent plane
 
 | Method | Path | Phase |
 |---|---|---|
-| POST | `/api/v1/agent/enroll` | 3 |
-| POST | `/api/v1/agent/heartbeat` | 3 |
 | POST | `/api/v1/agent/posture` | 5 |
 | POST | `/api/v1/agent/events` | 6 |
 | GET | `/api/v1/agent/policy` | 9 |
 | POST | `/api/v1/agent/session/attest` | 4 |
-
-Headers: `X-NETRA-Device`, `X-NETRA-Nonce`, `X-NETRA-Signature`.
 
 ### Client plane — OIDC bearer plus device binding
 
@@ -163,7 +223,6 @@ Headers: `X-NETRA-Device`, `X-NETRA-Nonce`, `X-NETRA-Signature`.
 | Method | Path | Phase |
 |---|---|---|
 | GET | `/api/v1/overview` | 10 |
-| GET | `/api/v1/endpoints`, `/endpoints/{id}` | 3 / 10 |
 | GET | `/api/v1/users`, `/users/{id}` | 2 / 10 |
 | GET | `/api/v1/sessions`, `/sessions/{id}` | 4 / 10 |
 | GET | `/api/v1/incidents`, `/incidents/{id}` | 12 |
@@ -179,8 +238,6 @@ Headers: `X-NETRA-Device`, `X-NETRA-Nonce`, `X-NETRA-Signature`.
 | GET/POST | `/api/v1/policies` | 9 |
 | POST | `/api/v1/policies/{id}/versions` | 9 |
 | POST | `/api/v1/policies/evaluate` | 9 |
-| POST | `/api/v1/devices/{id}/revoke` | 3 |
-| POST | `/api/v1/enrollment-tokens` | 3 |
 | GET/POST | `/api/v1/demo/scenarios` | 12 |
 
 An OpenAPI 3.1 document is generated from Phase 2, once there are authenticated

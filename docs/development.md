@@ -110,6 +110,36 @@ Clear it:
 env -u ELECTRON_RUN_AS_NODE -u ELECTRON_NO_ATTACH_CONSOLE npm run start
 ```
 
+## Enrolling the agent
+
+```bash
+ADMIN=$(curl -s -X POST http://localhost:8080/api/v1/dev/token \
+  -H 'Content-Type: application/json' -d '{"subject":"priya","roles":["ADMIN"]}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/enrollment-tokens \
+  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"label":"my-laptop","ttl_minutes":30}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+
+NETRA_ENROLLMENT_TOKEN="$TOKEN" make run-agent
+```
+
+Agent state lives in `NETRA_AGENT_STATE_DIR`, or by default:
+
+| Platform | Location |
+|---|---|
+| Windows | `%LOCALAPPDATA%\NETRA` |
+| macOS | `~/Library/Application Support/NETRA` |
+| Other | `~/.netra` |
+
+It holds `device.key` (mode 600 on Unix; DPAPI-wrapped as `device.key.dpapi` on
+Windows) and `registration.json`. Deleting both makes the agent enrol again,
+which needs a fresh enrollment token.
+
+To re-enrol during development, revoke the old device first — a duplicate
+`device_uid` is rejected, and a genuine reinstall generates a new one anyway.
+
 ## Testing
 
 ```bash

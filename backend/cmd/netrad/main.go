@@ -18,6 +18,7 @@ import (
 
 	"github.com/netra/backend/internal/audit"
 	"github.com/netra/backend/internal/config"
+	"github.com/netra/backend/internal/device"
 	"github.com/netra/backend/internal/httpapi"
 	"github.com/netra/backend/internal/identity"
 	"github.com/netra/backend/internal/logging"
@@ -75,6 +76,11 @@ func run() error {
 
 	users := user.NewStore(db.Pool())
 	auditStore := audit.NewStore(db.Pool(), logger)
+	devices := device.NewStore(db.Pool())
+
+	// Replayed-request protection only needs to remember nonces for as long as
+	// a captured request could still pass the clock-skew check.
+	startNoncePruner(ctx, devices, logger)
 
 	srv := &http.Server{
 		Addr: cfg.HTTP.Addr,
@@ -87,6 +93,7 @@ func run() error {
 			Audit:       auditStore,
 			AuditReader: auditStore,
 			DevVerifier: devVerifier,
+			Devices:     devices,
 		}),
 		ReadHeaderTimeout: cfg.HTTP.ReadTimeout,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,
@@ -186,4 +193,34 @@ func buildVerifier(cfg *config.Config, logger *slog.Logger) (identity.Verifier, 
 		slog.String("issuer", cfg.OIDC.Issuer),
 		slog.String("audience", cfg.OIDC.Audience))
 	return verifier, nil, nil
+}
+
+// startNoncePruner periodically deletes replay nonces that can no longer be
+// used, so the table does not grow without bound on a busy fleet.
+func startNoncePruner(ctx context.Context, devices *device.Store, logger *slog.Logger) {
+	const interval = 10 * time.Minute
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Twice the skew window, so a nonce is never forgotten while a
+				// request carrying it could still be accepted.
+				cutoff := time.Now().Add(-2 * device.MaxClockSkew)
+				removed, err := devices.PruneNonces(ctx, cutoff)
+				if err != nil {
+					logger.Error("failed to prune replay nonces", slog.String("error", err.Error()))
+					continue
+				}
+				if removed > 0 {
+					logger.Debug("pruned replay nonces", slog.Int64("removed", removed))
+				}
+			}
+		}
+	}()
 }
