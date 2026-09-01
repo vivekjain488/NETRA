@@ -140,6 +140,22 @@ which needs a fresh enrollment token.
 To re-enrol during development, revoke the old device first — a duplicate
 `device_uid` is rejected, and a genuine reinstall generates a new one anyway.
 
+### Running the backend natively
+
+The container image rebuilds on every backend change. Cache mounts keep that to
+a few seconds after the first build, but running the binary directly against
+the compose database is faster still for tight iteration:
+
+```bash
+make down              # or: docker compose ... stop backend, to free the port
+make up                # postgres stays containerised
+make run-backend       # the backend runs on your machine
+```
+
+It reads the same `.env`, so `NETRA_DATABASE_URL` must point at the published
+PostgreSQL port rather than the container hostname — which is what `make env`
+already writes.
+
 ## Client to agent IPC
 
 The agent listens on a local endpoint and publishes its address to

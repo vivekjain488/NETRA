@@ -7,14 +7,22 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Dependency layer, cached independently of source changes.
+#
+# The cache mounts matter more than they look: without them every image build
+# re-downloads the module set and recompiles the standard library, which turns
+# a one-line change into a multi-minute rebuild and pushes developers off the
+# documented path.
 COPY backend/go.mod backend/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY backend/ ./
 ARG VERSION=0.1.0-dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w \
       -X github.com/netra/backend/internal/version.Version=${VERSION} \

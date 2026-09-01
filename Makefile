@@ -34,6 +34,10 @@ identity-up: env ## Start the stack including Keycloak
 identity-passwords: ## Apply demo user passwords from .env to Keycloak
 	@set -a; . ./.env; set +a; ./deployment/keycloak/set-demo-passwords.sh
 
+.PHONY: run-backend
+run-backend: ## Run the backend natively against the compose database (fast iteration)
+	@set -a; . ./.env; set +a; cd backend && go run ./cmd/netrad
+
 .PHONY: logs
 logs: ## Follow backend logs
 	$(COMPOSE) logs -f backend

@@ -40,6 +40,11 @@ Both images are multi-stage:
   runtime layer carries no toolchain. Runs as uid 10001, never root. Version,
   commit and build time are injected via `-ldflags` and surfaced on the health
   endpoint, so a running deployment can always be traced to a source revision.
+  The build mounts caches for the Go module and build directories: without
+  them every image rebuild re-downloads the module set and recompiles the
+  standard library, which turns a one-line change into a multi-minute wait and
+  pushes developers off the documented path. With them, a source-change rebuild
+  takes about three seconds.
 - **Dashboard** — `node:24-alpine` build stage with `npm ci` for reproducible
   installs, `nginx:1.27-alpine` runtime with security headers and SPA routing.
 
