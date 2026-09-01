@@ -26,3 +26,8 @@ rand_core.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# Windows service integration. UNTESTED: compiles only under cfg(windows) and
+# has not been run on Windows hardware.
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"

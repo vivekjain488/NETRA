@@ -11,6 +11,7 @@ import { Events } from "@/pages/Events";
 import { Incidents } from "@/pages/Incidents";
 import { Policies } from "@/pages/Policies";
 import { Audit } from "@/pages/Audit";
+import { Demo } from "@/pages/Demo";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +42,7 @@ function Console() {
         <Route path="incidents" element={<Incidents />} />
         <Route path="policies" element={<Policies />} />
         <Route path="audit" element={<Audit />} />
+        <Route path="demo" element={<Demo />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

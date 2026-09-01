@@ -200,17 +200,27 @@ IPC boundary above.
 
 ## Planned
 
-| Control | Phase |
+**Rate limiting where guessing is the risk.** Enrollment, token issue and
+telemetry ingest are bounded per caller. The first two are guessable targets
+and an unbounded endpoint lets an attacker try as fast as the network allows;
+the third is an authenticated but automated write path where a runaway agent
+can fill a table faster than an operator notices. The limiter keys on the peer
+address, never on a forwarded header — keying on something client-controlled
+would let an attacker reset their own limit. It is a fixed window and
+per-instance, which is stated rather than implied to be a cluster-wide
+guarantee.
+
+## Not implemented
+
+Stated plainly rather than left to inference:
+
+| Control | Status |
 |---|---|
-| OIDC token validation, JWKS rotation | 2 |
-| RBAC across all planes | 2 |
-| Hash-chained audit writes and chain verification | 2 / 15 |
-| Administrator-issued single-use enrollment tokens | 3 |
-| Ed25519 signed agent requests, replay protection | 3 |
-| Encrypted local agent state | 3 |
-| mTLS between agent and backend | 15 |
-| Rate limiting | 15 |
-| Signed agent and client builds | 16 |
+| mTLS between agent and backend | Designed. Ed25519 request signing with replay protection is implemented, which is the property that matters; mutual TLS would add transport binding on top. |
+| Interactive OIDC sign-in | Backend validates tokens and the realm is defined; neither client performs the authorization-code exchange. Both use the development endpoint, which cannot exist outside development. |
+| Signed agent and client builds | `electron-builder` is configured; no signing identity is wired up. |
+| Distributed rate limiting | The current limiter is per-instance. |
+| Windows anything | Written, compiles under `cfg(windows)`, never executed on Windows. |
 
 ## Reporting
 

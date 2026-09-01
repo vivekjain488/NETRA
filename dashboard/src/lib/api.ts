@@ -216,6 +216,36 @@ export interface AuditRecord {
   hash: string;
 }
 
+export interface Scenario {
+  name: string;
+  title: string;
+  description: string;
+  expectation: string;
+}
+
+export interface ScenarioStep {
+  step: string;
+  at: string;
+  events_added: number;
+  risk_score?: number;
+  risk_level?: string;
+  decision?: string;
+  factors?: string[];
+  incident_id?: string;
+}
+
+export interface ScenarioResult {
+  scenario: string;
+  session_id: string;
+  user: string;
+  device: string;
+  steps: ScenarioStep[];
+  final_score: number;
+  final_level: string;
+  final_decision: string;
+  incident_id?: string;
+}
+
 export interface AuditPage {
   records: AuditRecord[];
   chain_verified: boolean;
@@ -326,4 +356,6 @@ export const api = {
   setIncidentStatus: (id: string, status: string) =>
     post<unknown>(`/api/v1/incidents/${id}/status`, { status }),
   audit: () => request<AuditPage>("/api/v1/audit?limit=200"),
+  scenarios: () => request<{ scenarios: Scenario[]; notice: string }>("/api/v1/demo/scenarios"),
+  runScenario: (name: string) => post<ScenarioResult>(`/api/v1/demo/scenarios/${name}`, {}),
 };

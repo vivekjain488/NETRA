@@ -28,6 +28,7 @@ import (
 	"github.com/netra/backend/internal/posture"
 	"github.com/netra/backend/internal/risk"
 	"github.com/netra/backend/internal/session"
+	"github.com/netra/backend/internal/simulator"
 	"github.com/netra/backend/internal/store"
 	"github.com/netra/backend/internal/telemetry"
 	"github.com/netra/backend/internal/trust"
@@ -142,6 +143,7 @@ func run() error {
 			Baselines: baselineStore,
 			Trust:     evaluator,
 			Stats:     trust.NewStats(db.Pool()),
+			Simulator: simulator.NewRunner(db.Pool(), telemetryStore, baselineStore, postureStore, evaluator, logger),
 		}),
 		ReadHeaderTimeout: cfg.HTTP.ReadTimeout,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,

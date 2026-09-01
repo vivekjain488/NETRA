@@ -10,6 +10,7 @@
 
 mod enrollment;
 mod ipc;
+mod service;
 mod status;
 mod transport;
 
@@ -30,8 +31,49 @@ use netra_collect::activity::{Collector, NetworkCollector, ProcessCollector};
 
 use crate::transport::{BackendClient, HeartbeatRequest, PostureReport, TransportError};
 
+/// Signals every loop to wind down. Used by the Windows service controller,
+/// which stops the agent from a different thread than the one running it.
+static SHUTDOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Asks the agent to stop.
+#[allow(dead_code)]
+pub fn request_shutdown() {
+    SHUTDOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Runs the agent to completion on the current thread.
+///
+/// The Windows service host needs a blocking entry point, because the service
+/// control thread must stay free to answer the controller.
+#[allow(dead_code)]
+pub fn run_agent_blocking() {
+    if let Err(err) = tokio::runtime::Runtime::new()
+        .expect("build the agent runtime")
+        .block_on(run_agent())
+    {
+        error!(error = %err, "the NETRA agent stopped with an error");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    match service::detect_mode() {
+        service::Mode::Foreground => run_agent().await,
+        service::Mode::WindowsService => {
+            #[cfg(windows)]
+            {
+                service::windows_service_host::run()
+                    .map_err(|e| anyhow::anyhow!("windows service dispatcher: {e}"))
+            }
+            #[cfg(not(windows))]
+            {
+                anyhow::bail!("--service is only supported on Windows")
+            }
+        }
+    }
+}
+
+async fn run_agent() -> Result<()> {
     let config = AgentConfig::from_env()?;
     init_logging(&config.log_level);
 
@@ -412,6 +454,16 @@ async fn run(
 
 /// Resolves when the service is asked to stop.
 async fn shutdown_signal() {
+    // A service controller stop is not a signal, so it is polled alongside one.
+    let controller_stop = async {
+        loop {
+            if SHUTDOWN.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    };
+
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };
@@ -429,11 +481,15 @@ async fn shutdown_signal() {
         tokio::select! {
             _ = ctrl_c => {}
             _ = term.recv() => {}
+            _ = controller_stop => {}
         }
     }
 
     #[cfg(not(unix))]
-    ctrl_c.await;
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = controller_stop => {}
+    }
 }
 
 /// Installs structured JSON logging. The agent's logs are security evidence,

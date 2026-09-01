@@ -54,6 +54,9 @@ type Options struct {
 	Baselines BaselineService
 	Trust     Evaluator
 	Stats     StatsService
+	// Simulator runs demonstration scenarios. Mounted only when configured, so
+	// a deployment without it has no synthetic-activity endpoint at all.
+	Simulator SimulatorService
 }
 
 // NewRouter builds the versioned NETRA API.
@@ -69,6 +72,14 @@ func NewRouter(opts Options) http.Handler {
 	r.Use(Recoverer)
 	r.Use(SecurityHeaders)
 	r.Use(CORS(opts.Config.HTTP.AllowedOrigins))
+
+	// Rate limits are applied where guessing or runaway automation is the risk:
+	// enrollment and token issue are guessable targets, and telemetry ingest is
+	// an automated write path. They are per-instance, which is stated in the
+	// documentation rather than implied to be a cluster-wide guarantee.
+	limitEnrollment := RateLimited(RateLimit{Requests: 20, Window: time.Minute}, ByIP)
+	limitIngest := RateLimited(RateLimit{Requests: 240, Window: time.Minute}, ByDevice)
+	limitTokens := RateLimited(RateLimit{Requests: 30, Window: time.Minute}, ByIP)
 
 	health := &healthHandler{
 		db:      opts.DB,
@@ -93,7 +104,7 @@ func NewRouter(opts Options) http.Handler {
 		// ── Development plane: mounted only when explicitly enabled ───────
 		if opts.DevVerifier != nil {
 			dev := &devHandler{verifier: opts.DevVerifier, recorder: opts.Audit}
-			v1.Post("/dev/token", dev.mint)
+			v1.With(limitTokens).Post("/dev/token", dev.mint)
 		}
 
 		// ── Agent plane: authenticated by the device key, not by a user ───
@@ -107,7 +118,7 @@ func NewRouter(opts Options) http.Handler {
 			// Enrollment is the one agent route without device authentication:
 			// the device has no identity yet. The single-use enrollment token
 			// issued by an administrator is what authorises it.
-			v1.Post("/agent/enroll", deviceAPI.enroll)
+			v1.With(limitEnrollment).Post("/agent/enroll", deviceAPI.enroll)
 
 			v1.Group(func(agent chi.Router) {
 				agent.Use(device.RequireDeviceSignature(device.AuthDeps{
@@ -128,7 +139,7 @@ func NewRouter(opts Options) http.Handler {
 				}
 
 				if opts.Telemetry != nil {
-					agent.Post("/agent/events", trustAPI(opts).ingest)
+					agent.With(limitIngest).Post("/agent/events", trustAPI(opts).ingest)
 				}
 			})
 		}
@@ -217,6 +228,17 @@ func NewRouter(opts Options) http.Handler {
 				api := trustAPI(opts)
 				admin.Post("/policies", api.createPolicy)
 				admin.Post("/policies/evaluate", api.evaluatePolicy)
+			})
+		}
+
+		if opts.Simulator != nil {
+			demo := &demoHandler{simulator: opts.Simulator, recorder: opts.Audit}
+			v1.Group(func(admin chi.Router) {
+				admin.Use(authenticated)
+				admin.Use(auth.RequireRole(authDeps,
+					roleSet(identity.RoleAdmin, identity.RoleAnalyst)...))
+				admin.Get("/demo/scenarios", demo.listScenarios)
+				admin.Post("/demo/scenarios/{name}", demo.runScenario)
 			})
 		}
 

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd unit for the NETRA agent on macOS.
+
+  Runs in the user's session rather than as root: nothing the agent collects
+  needs elevation, and a background service holding administrator rights on a
+  managed endpoint is a liability rather than a feature.
+
+  Install:
+    cp deployment/agent/com.netra.agent.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.netra.agent.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.netra.agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/netra-agent</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>NETRA_BACKEND_URL</key>
+        <string>http://localhost:8080</string>
+        <key>NETRA_LOG_LEVEL</key>
+        <string>info</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/netra-agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/netra-agent.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

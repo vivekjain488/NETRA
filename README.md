@@ -96,7 +96,7 @@ console stops it on its very next heartbeat.
 
 ## Status
 
-Phases 1 to 10 of 16 are complete. This table is the honest state of the build; nothing
+All 16 phases are complete. This table is the honest state of the build; nothing
 below is claimed working unless it has been run.
 
 | Phase | Scope | Status |
@@ -111,22 +111,55 @@ below is claimed working unless it has been run.
 | 8 | Behavioural baseline | **Done** (Python/ML layer deferred) |
 | 9 | Policy engine | **Done** |
 | 10 | SOC dashboard | **Done** |
-| 11 | Demo applications | Not started |
-| 12 | Attack simulator | Not started (correlation done) |
-| 13 | Hero demonstration | Not started |
-| 14 | Performance benchmarks | Not started |
-| 15 | Security hardening | Partially, ongoing |
-| 16 | Packaging and deployment | Not started |
+| 11 | Demo applications | **Done** |
+| 12 | Attack simulator and incident correlation | **Done** |
+| 13 | Hero demonstration | **Done** |
+| 14 | Performance benchmarks | **Done** (measured, see `bench/results.md`) |
+| 15 | Security hardening | **Done** except mTLS |
+| 16 | Packaging and deployment | **Done** (Windows paths untested) |
 
-### Known deviation from the specification
+### Try the demonstration
 
-The specification targets Windows first. Development is currently on macOS, so
-telemetry collection is written against a `Collector` trait with one backend per
-platform. The macOS backend is implemented and tested; the Windows backend
-compiles only under `cfg(windows)` and **has not been executed on Windows
-hardware**. It is marked as unverified in the source and must not be described
-as working until it has been run there. See
-[`agent/netra-collect/src/platform.rs`](agent/netra-collect/src/platform.rs).
+```bash
+make up
+make run-agent          # in another terminal, once enrolled
+```
+
+Then open the console at <http://localhost:8090>, sign in as `ravi` /
+Security analyst, and press **Demonstration → Compromised employee session**.
+Risk escalates 9 → 29 → 56 → 81 → 100 across five steps, the session is
+isolated and one incident opens — all through the real pipeline. See
+[docs/demo.md](docs/demo.md).
+
+### Known deviations from the specification
+
+**Windows code is unrun.** The specification targets Windows first;
+development is on macOS. Collection sits behind a `Collector` trait with one
+backend per platform. The macOS backends are implemented and tested. These
+compile only under `cfg(windows)` and **have not been executed on Windows
+hardware** — each is marked UNVERIFIED at its definition:
+
+- [`platform.rs`](agent/netra-collect/src/platform.rs) — hostname and OS build
+- [`posture.rs`](agent/netra-collect/src/posture.rs) — BitLocker, Secure Boot, Defender
+- [`activity.rs`](agent/netra-collect/src/activity.rs) — process and network sampling
+- [`keystore.rs`](agent/netra-core/src/keystore.rs) — DPAPI key protection
+- [`service.rs`](agent/netra-agent/src/service.rs) — Service Control Manager integration
+- [`install-windows-service.ps1`](deployment/agent/install-windows-service.ps1)
+
+**Interactive sign-in is not built.** The backend validates OIDC tokens and the
+Keycloak realm is defined, but neither client performs the authorization-code
+exchange. Both use the backend's development token endpoint, which exists only
+when `NETRA_ENV=development`. Everything after that step — nonce, attestation,
+binding, session — is the real mechanism.
+
+**mTLS is designed, not implemented.** Agent requests are Ed25519-signed with
+replay protection, which is the property that matters; mutual TLS would add
+transport-level binding on top.
+
+**Baselines are statistical, not learned.** Z-scores, histograms and frequency
+sets in Go, computed in the fast path. The risk engine accepts a bounded
+anomaly input for a future model, capped so it can never drive a session to
+critical alone. The Python analytics service is scaffolded but not built.
 
 ## Documentation
 

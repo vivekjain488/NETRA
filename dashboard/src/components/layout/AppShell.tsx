@@ -7,6 +7,7 @@ import {
   Radio,
   ScrollText,
   ShieldAlert,
+  Play,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BackendStatus } from "@/components/layout/BackendStatus";
@@ -20,6 +21,7 @@ const NAV = [
   { to: "/incidents", label: "Incidents", icon: ShieldAlert },
   { to: "/policies", label: "Policies", icon: ScrollText },
   { to: "/audit", label: "Audit", icon: FileClock },
+  { to: "/demo", label: "Demonstration", icon: Play },
 ] as const;
 
 export function AppShell() {

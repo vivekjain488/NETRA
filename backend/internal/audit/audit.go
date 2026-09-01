@@ -49,6 +49,7 @@ const (
 	ActionPostureRejected   = "device.posture_rejected"
 	ActionPolicyCreated     = "policy.created"
 	ActionIncidentUpdated   = "incident.status_changed"
+	ActionScenarioRun       = "demo.scenario_run"
 )
 
 // Entry is an action to be recorded.

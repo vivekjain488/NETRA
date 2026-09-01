@@ -1,68 +1,106 @@
 # Demonstration
 
-## Status
+## The rule
 
-**The demonstration is not implemented yet.** It is delivered by Phases 11–13.
-This document records the intended script so the components built beforehand
-are shaped to serve it.
-
-Nothing below currently runs. It is a plan, not a transcript.
-
-## Principle
-
-Demo mode drives the **real** pipeline. The simulator generates genuine events
-that the real ingest path, the real risk engine, the real policy engine and the
-real correlation engine process. No dashboard state is faked and no API
-response is stubbed to make the UI look finished.
+Demo mode drives the **real** pipeline. Scenarios generate genuine events that
+travel the real ingest path, the real risk engine, the real policy engine and
+the real correlation. No score, decision or incident is ever written directly.
 
 ```
-SIMULATOR → TELEMETRY API → RISK ENGINE → POLICY ENGINE → INCIDENT → SOC
+SIMULATOR → EVENTS → RISK ENGINE → POLICY ENGINE → INCIDENT → SOC
 ```
 
-Judges must be able to watch each stage happen, and to see the same event in
-the database, in the risk factors and in the incident timeline.
+Everything the simulator creates is marked `SIMULATOR` at the source, so
+synthetic activity is always distinguishable from a real endpoint's in the
+event stream.
 
-## Hero scenario: compromised employee session
+## Running it
 
-Opening state:
+In the console, open **Demonstration** and press a scenario. From the API:
 
-| Field | Value |
+```bash
+ADMIN=$(curl -s -X POST http://localhost:8080/api/v1/dev/token \
+  -H 'Content-Type: application/json' -d '{"subject":"priya","roles":["ADMIN"]}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+curl -s -X POST http://localhost:8080/api/v1/demo/scenarios/compromised-session \
+  -H "Authorization: Bearer $ADMIN"
+```
+
+Running a scenario is an administrator action and is audited: synthetic
+activity that looks real in the event stream must be traceable to whoever
+caused it.
+
+## Scenarios
+
+| Name | Shows |
 |---|---|
-| User | Alice |
-| Device | GOV-LAPTOP-01 |
-| Status | TRUSTED |
-| Risk | 12 / 100 |
+| `normal-session` | A known user on a known device stays in the LOW band |
+| `new-device` | The `NEW_DEVICE` factor appears and risk rises |
+| `unusual-login-time` | Deviation judged against *this user's* baseline, not an office norm |
+| `sensitive-resource` | Identical behaviour, stricter answer, because of what was reached |
+| `abnormal-volume` | The z-score against the user's own history |
+| `network-anomaly` | An unfamiliar network contributes |
+| `compromised-session` | The full escalation below |
 
-Triggered steps, each an operator-initiated synthetic event flowing through the
-real pipeline:
+## The hero demonstration
 
-| Step | Trigger | Expected risk |
-|---|---|---|
-| 1 | New device | 12 → 35 |
-| 2 | Unusual login time (01:47) | 35 → 52 |
-| 3 | Sensitive resource access | 52 → 70 |
-| 4 | Behaviour anomaly (abnormal access volume) | 70 → 84 |
-| 5 | Network anomaly | 84 → 94 |
+`compromised-session` introduces one signal per step. This is a real run, not a
+target:
 
-At 94 the policy engine reaches `CRITICAL`, applies `RESTRICT`, creates an
-incident and raises a SOC alert.
+| Step | Risk | Δ | Level | Decision |
+|---|---:|---:|---|---|
+| Normal sign-in, usual device | 9 | | LOW | ALLOW |
+| Credential used from a new device | 29 | +20 | LOW | ALLOW |
+| Sign-in at 01:47 from an unfamiliar network | 56 | +27 | ELEVATED | VERIFY |
+| Classified resource reached | 81 | +25 | HIGH | RESTRICT |
+| Abnormal read volume | 100 | +19 | CRITICAL | ISOLATE |
 
-The SOC analyst then sees one incident — not five disconnected alerts — with:
+At CRITICAL the policy engine isolates the session, opens one incident and
+alerts the SOC. The analyst then sees, in the Incidents view, a single record
+with the affected user and device, the peak risk, every contributing factor,
+and a timeline that merges endpoint events, risk changes and policy decisions
+into one ordered narrative.
 
-- the affected user, device and resource
-- the risk score and every factor with its individual contribution
-- the event timeline
-- the attack path
-- the policy action taken, citing the exact policy version in force
+The score lands on 100 rather than the 94 the original specification sketched.
+That is the number the engine computes from the accumulated context, and it is
+reported as computed. Tuning weights to hit a rehearsed figure would defeat the
+purpose of a demonstration that runs the real pipeline.
 
-The risk figures above are **targets for the weighting model**, not measured
-results. Actual values will be whatever the implemented engine produces, and
-this document will be updated to match rather than the engine tuned to match the
-document.
+## Seeded history, stated openly
 
-## Baselines
+Behavioural baselines need history, and a twenty-minute demonstration has none.
+The simulator seeds roughly 30 days of ordinary activity for the demo user
+before the first scenario runs — steady but not identical daily volumes, so the
+standard deviation behind the z-score is usable rather than zero.
 
-Behavioural baselines need history that a twenty-minute demonstration does not
-have. The simulator seeds roughly 30 days of synthetic normal behaviour per
-user, from which baselines are computed. This is stated openly: the baselines
-are simulator-seeded, not learned from real users.
+The baselines are therefore **simulator-seeded, not learned from real people**.
+The mechanism judging deviation is the real one; the history it judges against
+is synthetic.
+
+## Resetting
+
+Scenarios accumulate state deliberately: risk is cumulative within a session.
+To start from a clean slate:
+
+```bash
+docker exec netra-postgres psql -U netra -d netra -c "
+  TRUNCATE sessions, events, risk_scores, risk_factors, policy_decisions,
+           incidents, behaviour_profiles, device_posture, audit_logs
+  RESTART IDENTITY CASCADE;
+  DELETE FROM devices WHERE device_uid LIKE 'netra-sim-%';"
+```
+
+## What a reviewer should check
+
+The point of this design is that the demonstration is falsifiable. A sceptical
+reviewer can verify each claim independently:
+
+- **The events are real.** Open the Events page, or query
+  `/api/v1/events?session_id=…`, and see the rows the scenario produced.
+- **The score is computed, not written.** `/api/v1/risk/{session_id}` returns
+  every factor; the contributions sum exactly to the score.
+- **The decision cites its policy.** Each entry on the Policies page names the
+  policy and version in force when the decision was made.
+- **The audit chain is intact.** The Audit page verifies it on every load, and
+  reports the exact sequence number if it ever breaks.

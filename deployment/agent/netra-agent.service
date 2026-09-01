@@ -1,0 +1,42 @@
+# systemd unit for the NETRA agent on Linux.
+#
+# Runs as a dedicated unprivileged account. The hardening directives below are
+# not decoration: the agent reads system state and talks to one HTTPS endpoint,
+# so everything else it could reach is surface it does not need.
+#
+# Linux collectors are not implemented yet; this unit exists so the deployment
+# story is complete when they are.
+
+[Unit]
+Description=NETRA endpoint agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netra
+Group=netra
+ExecStart=/usr/local/bin/netra-agent
+Restart=always
+RestartSec=10
+
+Environment=NETRA_BACKEND_URL=http://localhost:8080
+Environment=NETRA_LOG_LEVEL=info
+
+StateDirectory=netra
+StateDirectoryMode=0700
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

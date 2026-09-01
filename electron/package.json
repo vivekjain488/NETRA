@@ -10,7 +10,8 @@
     "build": "npm run build:main && npm run build:renderer",
     "lint": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "start": "npm run build && electron .",
-    "dev": "vite"
+    "dev": "vite",
+    "package": "npm run build && electron-builder --publish never"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -26,6 +27,40 @@
     "electron": "^44.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "gov.netra.client",
+    "productName": "NETRA",
+    "files": [
+      "dist-electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
